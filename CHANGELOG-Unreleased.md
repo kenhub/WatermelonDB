@@ -20,6 +20,8 @@
 - [Android] Added linker flag for building with 16kB page alignment
 - [TS] make catchError visible to typescript
 - [LokiJS] Fixed `unsafeResetDatabase()` failing with "another operation is already in progress" when it's called while an autosave is in progress
+- [iOS] Fixed compilation on React Native 0.88, which removed `RCTCxxBridge`; JSI is installed through the bridge or the bridgeless proxy alike
+- [Android] Generate `BuildConfig` explicitly (AGP 9 no longer does for libraries) and stop applying the unused Kotlin plugin, which collides with AGP 9's built-in Kotlin support
 
 ### Performance
 
