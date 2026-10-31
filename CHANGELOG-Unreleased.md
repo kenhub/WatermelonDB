@@ -6,13 +6,26 @@
 
 ### New features
 
+- [LokiJS] New `onPersistenceError` option: called when saving the database to IndexedDB fails (e.g. quota exceeded, aborted transaction), once per failure. Quota exceeded save errors are now also passed to `onQuotaExceededError`
+- [LokiJS] New `allowInMemoryFallback` option (default: `true`). Pass `false` to make setup fail (and `onSetUpError` be called) instead of silently falling back to an in-memory database when IndexedDB is unavailable
+- [LokiJS] New `onInMemoryFallback` option: called when the database falls back to being in-memory only
+- New `Collection.observeRecord(id)`: a failsafe version of `findAndObserve(id)` that emits `null` while the record does not exist (instead of erroring), emits the record once it is created, and emits `null` (instead of completing) when it is deleted. `@experimentalFailsafe` relations now use it, so their `observe()` recovers when a missing related record is created later
+
 ### Fixes
 
 - [LokiJS] Multitab sync issue fix
+- [LokiJS] When IndexedDB database is deleted in another tab (`onversionchange`), the database is no longer re-created from this tab's memory on next autosave. Instead, the adapter stops saving, rejects further changes, and calls `onPersistenceError`
+- [LokiJS] Failures to save the database to IndexedDB are now always logged
+- [LokiJS] When accessing or opening IndexedDB throws synchronously (e.g. `SecurityError` when storage access is denied), the adapter now falls back to an in-memory database like for other IndexedDB open failures (or fails setup with `allowInMemoryFallback: false`), instead of always failing setup
 - [Android] Added linker flag for building with 16kB page alignment
 - [TS] make catchError visible to typescript
 - [Observation] Fixed `canEncodeMatcher()` reporting queries containing `Q.unsafeSqlExpr`,
   `Q.unsafeLokiExpr`, or a `Q.on` nested inside `Q.and`/`Q.or` as encodable.
+- [LokiJS] Fixed `unsafeResetDatabase()` failing with "another operation is already in progress" when it's called while an autosave is in progress
+- [iOS] Fixed compilation on React Native 0.88, which removed `RCTCxxBridge`; JSI is installed through the bridge or the bridgeless proxy alike
+- [Android] Generate `BuildConfig` explicitly (AGP 9 no longer does for libraries) and stop applying the unused Kotlin plugin, which collides with AGP 9's built-in Kotlin support
+- [SQLite] [iOS] Database setup failures on the legacy (non-JSI) bridge (database cannot be opened, schema setup or migration fails) now reject the promise and reach `onSetUpError` instead of raising an `NSException` that crashes the app
+- [SQLite] [iOS] [Android] After a failed schema setup or migration on the legacy (non-JSI) bridge, operations queued during setup are rejected with the setup error and the driver stays connected, so the app can recover with `database.unsafeResetDatabase()` instead of every call hanging (iOS) or being rejected with "No driver with tag N available" (Android). The Node.js SQLite bridge (`sqlite-node`) behaves the same way
 
 ### Performance
 
