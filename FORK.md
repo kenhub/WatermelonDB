@@ -15,7 +15,7 @@ upstream as pull requests.
 
 ## Releasing
 
-The package is published to npm as the private `@kenhub-gmbh/watermelondb`; the repository keeps
+The package is published to npm as `@kenhub-gmbh/watermelondb`; the repository keeps
 upstream's package name so upstream syncs stay conflict-free, and the built `dist/` is renamed at
 publish time by `.github/workflows/publish-fork.yml`. To release:
 
@@ -25,8 +25,10 @@ git push origin kenhub-v0.28.1-kenhub.1
 ```
 
 The version is the tag without the `kenhub-v` prefix: upstream version, then a `-kenhub.N`
-prerelease suffix. The workflow needs an `NPM_TOKEN` repository secret with publish rights for the
-`kenhub-gmbh` scope.
+prerelease suffix. The workflow publishes through npm trusted publishing: the package's settings on
+npmjs.com name this repository and `publish-fork.yml` as the trusted publisher, and GitHub Actions
+authenticates with an OIDC token, so no npm token is stored anywhere. Versions are published under
+the `kenhub` dist-tag.
 
 Consumers install it under the upstream name so imports stay `@nozbe/watermelondb/...`:
 
