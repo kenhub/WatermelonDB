@@ -281,9 +281,11 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(getRandomIds)
                      driver:(nullable WMDatabaseDriver *)driver
                  setUpError:(nullable NSError *)setUpError
 {
-    if (driver) {
+    if (driver && driver.db.fmdb.isOpen) {
         _connections[tag] = driver;
     } else {
+        // NOTE: A driver whose database could not be (re)opened is of no use - every operation
+        // on it would fail, so treat it like a missing driver
         [_connections removeObjectForKey:tag];
     }
     NSArray *queuedOperations = _queue[tag];
