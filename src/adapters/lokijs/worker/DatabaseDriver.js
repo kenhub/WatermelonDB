@@ -237,12 +237,15 @@ export default class DatabaseDriver {
   }
 
   async unsafeResetDatabase(): Promise<void> {
+    // NOTE: Clear cached record IDs before anything that can fail: JS clears its record cache even if the
+    // reset fails, and IDs left cached here would make later fetches return records JS no longer has
+    this.cachedRecords.clear()
+
     // A broken driver must not delete and re-create the database (e.g. if it was deleted in
     // another tab, that would bring it back with this driver's autosave)
     this._assertNotBroken()
     await deleteDatabase(this.loki)
 
-    this.cachedRecords.clear()
     logger.log('[Loki] Database is now reset')
 
     await this._openDatabase()
