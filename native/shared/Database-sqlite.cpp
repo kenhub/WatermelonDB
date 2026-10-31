@@ -30,7 +30,10 @@ SqliteStatement Database::prepareQuery(std::string sql) {
         sqlite3_finalize(statement);
         throw dbError("Failed to prepare query statement");
     }
-    assert(statement != nullptr);
+    if (statement == nullptr) {
+        // NOTE: sqlite3_prepare_v2 succeeds without a statement if the SQL is empty or only a comment
+        throw jsi::JSError(getRt(), "Failed to prepare query statement - the query is empty");
+    }
 
     evictCachedStatements();
     statementCache_.push_front({ sql, statement, 0 });

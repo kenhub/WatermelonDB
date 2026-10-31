@@ -1220,6 +1220,33 @@ export default () => {
     await adapter.batch([['create', 'tasks', mockTaskRaw({})]])
     expect(await adapter.count(taskQuery())).toBe(1)
   })
+  it('rejects raw SQL queries it cannot run (JSI)', async (adapter, AdapterClass) => {
+    if (
+      AdapterClass.name !== 'SQLiteAdapter' ||
+      adapter.underlyingAdapter._dispatcherType !== 'jsi'
+    ) {
+      return
+    }
+    await adapter.batch([['create', 'tasks', mockTaskRaw({ id: 't1', text1: 'foo' })]])
+
+    // empty or comment-only SQL compiles to no statement at all
+    await expect(
+      adapter.unsafeQueryRaw(taskQuery(Q.unsafeSqlQuery('-- nothing to run'))),
+    ).rejects.toBeInstanceOf(Error)
+    // record queries must select the id first
+    await expect(
+      adapter.query(taskQuery(Q.unsafeSqlQuery('select text1 from tasks'))),
+    ).rejects.toBeInstanceOf(Error)
+    await expect(
+      adapter.queryIds(taskQuery(Q.unsafeSqlQuery('select text1 from tasks'))),
+    ).rejects.toBeInstanceOf(Error)
+
+    // the database is still usable
+    expect(await adapter.queryIds(taskQuery(Q.unsafeSqlQuery('select id from tasks')))).toEqual([
+      't1',
+    ])
+    expect(await adapter.count(taskQuery())).toBe(1)
+  })
   it('can actually save and read from file system', async (_adapter, AdapterClass, extraAdapterOptions, platform) => {
     if (AdapterClass.name === 'LokiJSAdapter') {
       // Loki is tested differently
