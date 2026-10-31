@@ -51,7 +51,9 @@ export default class DatabaseDriver {
 
   constructor(options: LokiAdapterOptions): void {
     const { schema, migrations } = options
-    this.options = options
+    // copied, so that this object identifies this driver, even if the app reuses its options object
+    // for another adapter (see lokiExtensions)
+    this.options = { ...options }
     this.schema = schema
     this.migrations = migrations
   }

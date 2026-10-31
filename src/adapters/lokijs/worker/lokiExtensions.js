@@ -47,6 +47,7 @@ const checkIDB = (onQuotaExceededError: ?(error: Error) => void): Promise<?Error
 
 // Setting up an empty database opens it twice (see DatabaseDriver._migrateIfNeeded), so we keep
 // track of what was reported, so that `onInMemoryFallback` is only called once per adapter
+// (DatabaseDriver copies options, so each adapter has its own options object)
 const reportedInMemoryFallbacks: WeakSet<LokiAdapterOptions> = new WeakSet()
 
 async function getLokiAdapter(options: LokiAdapterOptions): mixed {
@@ -190,11 +191,16 @@ export async function newLoki(
         '[Loki] IndexedDB database was deleted or upgraded by another connection (most likely in another browser tab). To avoid re-creating it from memory, this database will not be saved anymore. App must be reloaded.',
       )
       error.name = 'VersionChangeError'
+      // Stop saving and accepting changes before notifying app callbacks, so that they can't make
+      // changes anymore, and so that a throwing callback can't prevent it
       loki && lokiFatalError(loki)
-      reporter.reportFatal(error)
       onPersistenceLost && onPersistenceLost(error)
-      // $FlowFixMe
-      userOnVersionChange && userOnVersionChange(event)
+      try {
+        reporter.reportFatal(error)
+      } finally {
+        // $FlowFixMe
+        userOnVersionChange && userOnVersionChange(event)
+      }
     }
   }
 

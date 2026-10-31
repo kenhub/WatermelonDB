@@ -162,6 +162,29 @@ describe('LokiJSAdapter persistence errors', () => {
     // reads still work
     expect(await adapter.find('tasks', `t${taskId - 1}`)).toBeTruthy()
   })
+
+  it('breaks the driver before notifying, even if a callback throws', async () => {
+    const persistenceAdapter = new FakeIncrementalAdapter()
+    const onversionchange = jest.fn()
+    let wasBrokenWhenNotified = false
+    const lokiAdapter = makeAdapter({
+      _testLokiAdapter: persistenceAdapter,
+      onPersistenceError: () => {
+        wasBrokenWhenNotified = lokiAdapter._driver._isBroken
+        throw new Error('handler failed')
+      },
+      extraIncrementalIDBOptions: { onversionchange },
+    })
+    const adapter = new DatabaseAdapterCompat(lokiAdapter)
+    await writeTask(adapter)
+
+    expect(() => persistenceAdapter.options.onversionchange({ type: 'versionchange' })).toThrow(
+      'handler failed',
+    )
+    expect(wasBrokenWhenNotified).toBe(true)
+    expect(onversionchange).toHaveBeenCalledTimes(1)
+    await expect(writeTask(adapter)).rejects.toThrow('broken state')
+  })
 })
 
 describe('LokiJSAdapter in-memory fallback', () => {
@@ -175,6 +198,20 @@ describe('LokiJSAdapter in-memory fallback', () => {
     expect(onSetUpError).not.toHaveBeenCalled()
     expect(onInMemoryFallback).toHaveBeenCalledTimes(1)
     expect(onInMemoryFallback.mock.calls[0][0].message).toMatch('IndexedDB is not available')
+  })
+
+  it('reports the fallback for each adapter, even if they share options', async () => {
+    const onInMemoryFallback = jest.fn()
+    const options = {
+      dbName: `test${Math.random()}`,
+      schema: testSchema,
+      useWebWorker: false,
+      useIncrementalIndexedDB: true,
+      onInMemoryFallback,
+    }
+    await writeTask(new DatabaseAdapterCompat(makeAdapter(options)))
+    await writeTask(new DatabaseAdapterCompat(makeAdapter(options)))
+    expect(onInMemoryFallback).toHaveBeenCalledTimes(2)
   })
 
   it('fails setup when IndexedDB is unavailable and allowInMemoryFallback is false', async () => {
