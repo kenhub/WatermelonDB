@@ -1,0 +1,53 @@
+# Publishes the kenhub fork as @kenhub-gmbh/watermelondb (private scope) from a tag:
+#   git tag kenhub-v0.28.1-kenhub.1 && git push origin kenhub-v0.28.1-kenhub.1
+# The repository keeps upstream's package name; only the built dist/ is renamed.
+name: Publish fork
+
+on:
+  push:
+    tags:
+      - "kenhub-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Check and build
+        run: |
+          yarn eslint
+          yarn jest --config=./jest.config.js --forceExit --testPathIgnorePatterns 'src/adapters/sqlite/test.js'
+          yarn build
+
+      - name: Name and version the package after the tag
+        run: |
+          version="${GITHUB_REF_NAME#kenhub-v}"
+          node - "$version" <<'JS'
+          const fs = require("fs")
+          const pkg = JSON.parse(fs.readFileSync("dist/package.json", "utf8"))
+          pkg.name = "@kenhub-gmbh/watermelondb"
+          pkg.version = process.argv[2]
+          pkg.repository = { type: "git", url: "https://github.com/kenhub/WatermelonDB.git" }
+          pkg.publishConfig = { access: "restricted" }
+          fs.writeFileSync("dist/package.json", JSON.stringify(pkg, null, 2) + "\n")
+          console.log(`${pkg.name}@${pkg.version}`)
+          JS
+
+      - name: Publish
+        run: npm publish
+        working-directory: dist
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
