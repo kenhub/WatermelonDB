@@ -284,7 +284,7 @@ export default class DatabaseDriver {
   async _openDatabase(): Promise<void> {
     logger.log('[Loki] Initializing IndexedDB')
 
-    this.loki = await newLoki(this.options)
+    this.loki = await newLoki(this.options, (error) => this._breakDriver(error))
 
     logger.log('[Loki] Database loaded')
   }
@@ -464,18 +464,28 @@ export default class DatabaseDriver {
       )
       throw error
     }
+    this._breakDriver(error)
+
+    // Rethrow error
+    throw error
+  }
+
+  // Puts driver in a broken state: further changes are rejected and Loki won't save anymore.
+  // Used directly (regardless of experimentalAllowsFatalError) when the database can no longer be
+  // safely persisted, e.g. because it was deleted in another browser tab
+  _breakDriver(error: Error): void {
+    if (this._isBroken) {
+      return
+    }
     // Stop further mutations
     this._isBroken = true
 
-    // Disable Loki autosave
-    lokiFatalError(this.loki)
+    // Disable Loki autosave (Loki might not be assigned yet if this happens while it's loading)
+    this.loki && lokiFatalError(this.loki)
 
     // Notify handler
     logger.error('DatabaseDriver is broken. App must be reloaded before continuing.')
     const handler = this.options._onFatalError
     handler && handler(error)
-
-    // Rethrow error
-    throw error
   }
 }
