@@ -9,6 +9,7 @@
 - [LokiJS] New `onPersistenceError` option: called when saving the database to IndexedDB fails (e.g. quota exceeded, aborted transaction), once per failure. Quota exceeded save errors are now also passed to `onQuotaExceededError`
 - [LokiJS] New `allowInMemoryFallback` option (default: `true`). Pass `false` to make setup fail (and `onSetUpError` be called) instead of silently falling back to an in-memory database when IndexedDB is unavailable
 - [LokiJS] New `onInMemoryFallback` option: called when the database falls back to being in-memory only
+- New `Collection.observeRecord(id)`: a failsafe version of `findAndObserve(id)` that emits `null` while the record does not exist (instead of erroring), emits the record once it is created, and emits `null` (instead of completing) when it is deleted. `@experimentalFailsafe` relations now use it, so their `observe()` recovers when a missing related record is created later
 
 ### Fixes
 
