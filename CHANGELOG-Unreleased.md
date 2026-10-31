@@ -27,7 +27,8 @@
 - [SQLite] [iOS] Database setup failures on the legacy (non-JSI) bridge (database cannot be opened, schema setup or migration fails) now reject the promise and reach `onSetUpError` instead of raising an `NSException` that crashes the app
 - [SQLite] [iOS] [Android] After a failed schema setup or migration on the legacy (non-JSI) bridge, operations queued during setup are rejected with the setup error and the driver stays connected, so the app can recover with `database.unsafeResetDatabase()` instead of every call hanging (iOS) or being rejected with "No driver with tag N available" (Android). The Node.js SQLite bridge (`sqlite-node`) behaves the same way
 - [SQLite] [JSI] Database setup failures on the JSI path (database file cannot be opened, schema setup or migration fails) now reject the setup promise and reach `onSetUpError` instead of crashing the app
-- [SQLite] [JSI] A failed `unsafeResetDatabase()` now rejects instead of crashing the app, and leaves the (empty, consistent) database open so the reset can be retried
+- [SQLite] [JSI] A failed `unsafeResetDatabase()` now rejects instead of crashing the app, and leaves the (empty, consistent) database open so the reset can be retried. Other calls on a database whose setup or reset failed are rejected instead of failing an assertion
+- `database.unsafeResetDatabase()` that fails now restores the adapter (and clears record caches, since data may already be erased), so the reset can be retried instead of every later call failing with "Cannot call database.adapter.X while the database is being reset"
 - [SQLite] [JSI] Calling a native method with the wrong number of arguments now throws a JS error on Android too, instead of crashing the app
 - [SQLite] [JSI] The prepared statement cache is now bounded (256 statements, least recently used are finalized first), so one-off queries no longer keep a prepared statement alive for the lifetime of the database
 

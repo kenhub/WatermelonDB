@@ -49,6 +49,35 @@ describe('Database', () => {
 
       expect(await tasks.find(m1.id)).toBe(m1)
     })
+    it('can retry a failed reset', async () => {
+      const { database, tasks } = mockDatabase()
+      const { adapter } = database
+
+      const m1 = await database.write(() => tasks.create())
+      expect(tasks._cache.get(m1.id)).toBe(m1)
+
+      jest
+        .spyOn(adapter, 'unsafeResetDatabase')
+        .mockImplementationOnce(() => Promise.reject(new Error('reset failed')))
+      await expectToRejectWithMessage(
+        database.write(() => database.unsafeResetDatabase()),
+        'reset failed',
+      )
+
+      // the adapter is restored (not left as the placeholder that rejects every call), and caches
+      // are cleared, since a failed reset may have already erased data
+      expect(database.adapter).toBe(adapter)
+      expect(database._isBeingReset).toBe(false)
+      expect(tasks._cache.get(m1.id)).toBe(undefined)
+      expect(database._resetCount).toBe(1)
+
+      // so the reset can be retried
+      await database.write(() => database.unsafeResetDatabase())
+      expect(adapter.unsafeResetDatabase).toHaveBeenCalledTimes(2)
+      expect(database._resetCount).toBe(2)
+      await expectToRejectWithMessage(tasks.find(m1.id), 'not found')
+      expect(await database.adapter.getLocal('test')).toBe(null)
+    })
     it('increments reset count after every reset', async () => {
       const { database } = mockDatabase()
       expect(database._resetCount).toBe(0)

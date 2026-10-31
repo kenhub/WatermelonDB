@@ -79,9 +79,10 @@ class SqliteJsiDispatcher implements SqliteDispatcher {
   }
 
   call(name: SqliteDispatcherMethod, _args: any[], callback: ResultCallback<any>): void {
-    if (this._openError) {
-      this._unsafeErrorListener(this._openError)
-      callback({ error: this._openError })
+    const openError = this._openError
+    if (openError) {
+      this._unsafeErrorListener(openError)
+      callback({ error: openError })
       return
     }
 

@@ -58,6 +58,14 @@ Database::~Database() {
     destroy();
 }
 
+// Throws (i.e. rejects the call in JS) if the database was not successfully set up, or was closed -
+// e.g. if the app keeps using it after a failed setup or reset instead of resetting it first
+void Database::requireInitialized() {
+    if (!initialized_) {
+        throw jsi::JSError(getRt(), "Database is not set up - its setup or reset failed, or it was closed");
+    }
+}
+
 bool Database::isCached(std::string cacheKey) {
     return cachedRecords_.find(cacheKey) != cachedRecords_.end();
 }

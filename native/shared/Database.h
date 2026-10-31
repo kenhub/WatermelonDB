@@ -68,6 +68,7 @@ private:
 
     jsi::Runtime &getRt();
     jsi::JSError dbError(std::string description);
+    void requireInitialized();
 
     SqliteStatement prepareQuery(std::string sql);
     void evictCachedStatements();

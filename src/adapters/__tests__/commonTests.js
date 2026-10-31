@@ -1161,12 +1161,9 @@ export default () => {
       await expect(adapterPromise).rejects.toBeInstanceOf(Error)
     }
 
-    if (
-      AdapterClass.name === 'SQLiteAdapter' &&
-      adapter.underlyingAdapter._dispatcherType === 'asynchronous'
-    ) {
-      // With the asynchronous (non-JSI) bridge, the app must be able to recover from a failed
-      // migration (e.g. from onSetUpError) by resetting the database with the same adapter
+    if (AdapterClass.name === 'SQLiteAdapter') {
+      // The app must be able to recover from a failed migration (e.g. from onSetUpError) by
+      // resetting the database with the same adapter
       const failedAdapter = new DatabaseAdapterCompat(
         new AdapterClass({
           schema: { ...testSchema, version: 2 },
@@ -1174,14 +1171,16 @@ export default () => {
           ...extraAdapterOptions,
         }),
       )
-      // operations issued while the migration is still running are queued by the bridge
+      // operations issued while the migration is still running are queued by the asynchronous
+      // bridge. With JSI, setup is synchronous, so this runs after setup has already failed
       const queuedCount = failedAdapter.count(taskQuery())
       await expect(failedAdapter.underlyingAdapter.initializingPromise).rejects.toBeInstanceOf(Error)
       if (platform === 'node') {
         // NOTE: The node bridge settles every call synchronously, so nothing was actually queued
         await queuedCount
       } else {
-        // queued operations are rejected with the setup error instead of hanging forever
+        // queued operations are rejected with the setup error instead of hanging forever, and
+        // (JSI) operations on a database that failed to set up are rejected instead of crashing
         await expect(queuedCount).rejects.toBeInstanceOf(Error)
       }
 
@@ -1191,6 +1190,35 @@ export default () => {
       await failedAdapter.batch([['create', 'tasks', mockTaskRaw({})]])
       expect(await failedAdapter.count(taskQuery())).toBe(1)
     }
+  })
+  it('can retry a failed reset', async (adapter, AdapterClass) => {
+    if (AdapterClass.name !== 'SQLiteAdapter') {
+      // NOTE: Only SQLite resets by running the schema, which this test breaks to make the reset fail
+      return
+    }
+
+    await adapter.batch([['create', 'tasks', mockTaskRaw({})]])
+    expect(await adapter.count(taskQuery())).toBe(1)
+
+    // make the reset fail after the database was cleared, while setting up the schema
+    const sqliteAdapter = adapter.underlyingAdapter
+    sqliteAdapter._encodedSchema = () => 'create table broken ('
+    try {
+      await expect(adapter.unsafeResetDatabase()).rejects.toBeInstanceOf(Error)
+    } finally {
+      delete sqliteAdapter._encodedSchema
+    }
+
+    if (sqliteAdapter._dispatcherType === 'jsi') {
+      // the database is not set up until it is reset successfully
+      await expect(adapter.count(taskQuery())).rejects.toBeInstanceOf(Error)
+    }
+
+    // the same adapter can retry the reset, and is usable afterwards
+    await adapter.unsafeResetDatabase()
+    expect(await adapter.count(taskQuery())).toBe(0)
+    await adapter.batch([['create', 'tasks', mockTaskRaw({})]])
+    expect(await adapter.count(taskQuery())).toBe(1)
   })
   it('can actually save and read from file system', async (_adapter, AdapterClass, extraAdapterOptions, platform) => {
     if (AdapterClass.name === 'LokiJSAdapter') {
