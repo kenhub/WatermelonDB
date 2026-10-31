@@ -53,7 +53,7 @@ const checkIDB = (onQuotaExceededError: ?(error: Error) => void): Promise<?Error
       )
       if (error && error.name === 'QuotaExceededError') {
         logger.log('[Loki] Looks like disk quota was exceeded: ', error)
-        onQuotaExceededError && onQuotaExceededError(error)
+        callSafely(onQuotaExceededError, error)
       }
       resolve(error || new Error('IndexedDB failed to open'))
     }

@@ -237,8 +237,12 @@ describe('LokiJSAdapter in-memory fallback', () => {
       useIncrementalIndexedDB: true,
       onInMemoryFallback,
     }
-    await writeTask(new DatabaseAdapterCompat(makeAdapter(options)))
-    await writeTask(new DatabaseAdapterCompat(makeAdapter(options)))
+    // not using makeAdapter(), so that both adapters get the very same options object
+    const adapter1 = new LokiJSAdapter(options)
+    const adapter2 = new LokiJSAdapter(options)
+    adapters.push(adapter1, adapter2)
+    await writeTask(new DatabaseAdapterCompat(adapter1))
+    await writeTask(new DatabaseAdapterCompat(adapter2))
     expect(onInMemoryFallback).toHaveBeenCalledTimes(2)
   })
 
@@ -283,6 +287,29 @@ describe('LokiJSAdapter in-memory fallback', () => {
       makeAdapter({ allowInMemoryFallback: false, onSetUpError: resolve })
     })
     expect(setUpError.cause).toBe(idbError)
+  })
+
+  it('does not hang setup if onQuotaExceededError throws', async () => {
+    const idbError = quotaError()
+    global.indexedDB = {
+      open: () => {
+        const request = {}
+        setTimeout(() => request.onerror({ target: { error: idbError } }), 0)
+        return request
+      },
+    }
+    const onInMemoryFallback = jest.fn()
+    await writeTask(
+      new DatabaseAdapterCompat(
+        makeAdapter({
+          onInMemoryFallback,
+          onQuotaExceededError: () => {
+            throw new Error('quota handler failed')
+          },
+        }),
+      ),
+    )
+    expect(onInMemoryFallback).toHaveBeenCalledTimes(1)
   })
 
   it('reports why IndexedDB failed to open', async () => {
