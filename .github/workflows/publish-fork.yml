@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  # npm trusted publishing: the job proves its identity with an OIDC token
+  id-token: write
 
 jobs:
   publish:
@@ -20,8 +22,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      # trusted publishing needs npm 11.5 or newer
+      - name: Update npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-scripts
@@ -47,8 +53,7 @@ jobs:
           console.log(`${pkg.name}@${pkg.version}`)
           JS
 
+      # a prerelease version must name its dist-tag; consumers pin the exact version
       - name: Publish
-        run: npm publish
+        run: npm publish --access restricted --tag kenhub
         working-directory: dist
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
