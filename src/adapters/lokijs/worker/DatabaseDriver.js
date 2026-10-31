@@ -221,6 +221,8 @@ export default class DatabaseDriver {
   }
 
   unsafeExecute(operations: UnsafeExecuteOperations): void {
+    // raw access could change data that can no longer be saved
+    this._assertNotBroken()
     if (process.env.NODE_ENV !== 'production') {
       invariant(
         operations &&

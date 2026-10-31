@@ -126,7 +126,7 @@ On the web, `database.write()` resolves once changes are applied in memory. Loki
 
 Multiple tabs of the same app share one IndexedDB database, but each tab keeps its own in-memory copy:
 
-- When another tab deletes the database (e.g. on logout), this tab stops saving to IndexedDB, rejects further changes, and calls `onPersistenceError` and `onversionchange`. Reload the page to continue.
+- When another tab deletes the database (e.g. on logout), this tab stops saving to IndexedDB, rejects further changes (including `unsafeExecute`), and calls `onPersistenceError` and `onversionchange`. Reload the page to continue.
 - When two tabs make changes concurrently, the last tab to save overwrites changes saved by the other one (`onDidOverwrite` is called). WatermelonDB does not coordinate writers across tabs.
 - `onPersistenceError`, `onInMemoryFallback`, `onQuotaExceededError` and `extraIncrementalIDBOptions` callbacks only work with `useWebWorker: false`.
 :::

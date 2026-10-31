@@ -157,6 +157,9 @@ describe('LokiJSAdapter persistence errors', () => {
     // changes are rejected, and nothing is saved anymore
     const savesBefore = persistenceAdapter.saves
     await expect(writeTask(adapter)).rejects.toThrow('broken state')
+    const rawWrite = jest.fn()
+    await expect(adapter.unsafeExecute({ loki: rawWrite })).rejects.toThrow('broken state')
+    expect(rawWrite).not.toHaveBeenCalled()
     expect(() => lokiAdapter._driver.loki.saveDatabase()).toThrow()
     await sleep(30)
     expect(persistenceAdapter.saves).toBe(savesBefore)
