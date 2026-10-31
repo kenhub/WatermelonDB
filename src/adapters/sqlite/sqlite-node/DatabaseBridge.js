@@ -212,13 +212,13 @@ class DatabaseBridge {
   }
 
   // Rejects the operations queued while waiting for setup with the setup error, and keeps the
-  // driver connected if its database could be opened.
+  // driver connected if its database is open.
   // NOTE: Setup runs in a transaction, so after a failed setup the database is still consistent.
   // Keeping the driver lets the app recover (e.g. by calling unsafeResetDatabase). This mirrors
   // the behavior of the native (non-JSI) bridges.
   failSetUp(tag: number, driver: ?DatabaseDriver, error: Error): void {
     const { queue = [] } = this.connections[tag] || {}
-    if (driver && driver.database) {
+    if (driver && driver.database && driver.database.instance && driver.database.instance.open) {
       this.connections[tag] = { driver, queue: [], status: 'connected' }
     } else {
       delete this.connections[tag]
