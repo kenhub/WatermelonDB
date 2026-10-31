@@ -116,6 +116,83 @@ export default class Collection<Record: Model> {
     })
   }
 
+  /**
+   * Observes the record with the given ID, treating a missing record as `null`.
+   *
+   * This is a failsafe version of `findAndObserve()`. The returned Observable never errors or
+   * completes because of the record's existence. Instead, it emits:
+   * - the record, if it exists, and then again every time it changes
+   * - `null`, if the record does not exist (yet)
+   * - the record, once a record with this ID is created (e.g. arrives via sync)
+   * - `null` again, if the record is deleted — and the record again, if it is re-created
+   *
+   * Use this instead of `findAndObserve()` when the record might not exist, e.g. when observing
+   * a related record that may arrive later, so that your UI can render a placeholder instead of
+   * throwing an error.
+   */
+  observeRecord(id: RecordId): Observable<?Record> {
+    return Observable.create((observer) => {
+      let unsubscribed = false
+      let observedRecord: ?Record = null
+      let unsubscribeFromRecord: ?Unsubscribe = null
+
+      const stopObservingRecord = () => {
+        unsubscribeFromRecord && unsubscribeFromRecord()
+        unsubscribeFromRecord = null
+        observedRecord = null
+      }
+
+      const observeExistingRecord = (record: Record) => {
+        stopObservingRecord()
+        observedRecord = record
+        observer.next(record)
+        unsubscribeFromRecord = record.experimentalSubscribe((isDeleted) => {
+          if (unsubscribed) {
+            return
+          }
+          if (isDeleted) {
+            stopObservingRecord()
+            observer.next(null)
+          } else {
+            observer.next(record)
+          }
+        })
+      }
+
+      // Watch for a record with this ID being created (or re-created after deletion)
+      const unsubscribeFromCollection = this.experimentalSubscribe((changes) => {
+        if (unsubscribed) {
+          return
+        }
+        changes.forEach(({ record, type }) => {
+          if (type === 'created' && record.id === id && record !== observedRecord) {
+            observeExistingRecord(record)
+          }
+        })
+      })
+
+      this._fetchRecordIfExists(id, (result) => {
+        if (unsubscribed || observedRecord) {
+          // Unsubscribed, or a `created` notification arrived while we were fetching
+          return
+        }
+        if (result.error) {
+          observer.error(result.error)
+        } else if (result.value) {
+          observeExistingRecord(result.value)
+        } else {
+          observer.next(null)
+        }
+      })
+
+      return () => {
+        unsubscribed = true
+        unsubscribeFromCollection()
+        stopObservingRecord()
+      }
+    })
+  }
+
   /*:: query: ArrayOrSpreadFn<Clause, Query<Record>>  */
   /**
    * Returns a `Query` with conditions given.
@@ -217,6 +294,18 @@ export default class Collection<Record: Model> {
 
   // Fetches exactly one record (See: Collection.find)
   _fetchRecord(id: RecordId, callback: ResultCallback<Record>): void {
+    this._fetchRecordIfExists(id, (result) =>
+      callback(
+        mapValue((record) => {
+          invariant(record, `Record ${this.table}#${id} not found`)
+          return record
+        }, result),
+      ),
+    )
+  }
+
+  // Fetches exactly one record, or `null` if it does not exist (See: Collection.observeRecord)
+  _fetchRecordIfExists(id: RecordId, callback: ResultCallback<?Record>): void {
     if (typeof id !== 'string') {
       callback({ error: new Error(`Invalid record ID ${this.table}#${id}`) })
       return
@@ -231,10 +320,10 @@ export default class Collection<Record: Model> {
 
     this.database.adapter.underlyingAdapter.find(this.table, id, (result) =>
       callback(
-        mapValue((rawRecord) => {
-          invariant(rawRecord, `Record ${this.table}#${id} not found`)
-          return this._cache.recordFromQueryResult(rawRecord)
-        }, result),
+        mapValue(
+          (rawRecord) => (rawRecord ? this._cache.recordFromQueryResult(rawRecord) : null),
+          result,
+        ),
       ),
     )
   }

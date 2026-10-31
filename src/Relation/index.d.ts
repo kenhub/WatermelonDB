@@ -11,6 +11,9 @@ type ExtractRecordId = ExtractRecordIdNonOptional & ExtractRecordIdOptional
 
 export type Options = $Exact<{
   isImmutable: boolean
+  // If true, observing a related record that does not exist emits `null` (and recovers once the
+  // record is created) instead of erroring. See `Collection.observeRecord` and `@experimentalFailsafe`
+  failsafe?: boolean
 }>
 
 // Defines a one-to-one relation between two Models (two tables in db)
@@ -26,6 +29,8 @@ export default class Relation<T extends Model> {
   _relationTableName: TableName<$NonMaybeType<T>>
 
   _isImmutable: boolean
+
+  _isFailsafe: boolean
 
   // TODO: FIX TS
   // @lazy
