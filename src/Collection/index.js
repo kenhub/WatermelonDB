@@ -139,6 +139,15 @@ export default class Collection<Record: Model> {
       // Set once a change notification for this ID arrives - from then on, the record cache is
       // the source of truth, and the (possibly outdated) result of the initial fetch is ignored
       let initialFetchSuperseded = false
+      // Whether the last value emitted was `null` (so that we don't emit it twice in a row)
+      let isMissingEmitted = false
+
+      const emitMissing = () => {
+        if (!isMissingEmitted) {
+          isMissingEmitted = true
+          observer.next(null)
+        }
+      }
 
       const stopObservingRecord = () => {
         unsubscribeFromRecord && unsubscribeFromRecord()
@@ -177,6 +186,7 @@ export default class Collection<Record: Model> {
             observer.next(record)
           }
         })
+        isMissingEmitted = false
         observer.next(record)
       }
 
@@ -189,16 +199,22 @@ export default class Collection<Record: Model> {
           }
           initialFetchSuperseded = true
           const record = getLiveCachedRecord()
-          record && observeExistingRecord(record)
+          // (If the record was created and deleted while the initial fetch is pending, we still
+          // need to emit the initial `null`)
+          record ? observeExistingRecord(record) : emitMissing()
         })
       }
 
       const observeMissingRecord = () => {
         startObservingCollection()
-        observer.next(null)
+        emitMissing()
       }
 
       startObservingCollection()
+      // NOTE: A fetched raw record is always turned into a cached model (even if this fetch is
+      // superseded), because the adapter marks it as sent to JS - dropping it would leave the
+      // adapter-side and JS record caches out of sync. Adapters process calls in order, so a find
+      // result can't be older than a change notification that arrives before it.
       this._fetchRecordIfExists(id, (result) => {
         if (unsubscribed || initialFetchSuperseded || observedRecord) {
           return
@@ -210,7 +226,7 @@ export default class Collection<Record: Model> {
           observeExistingRecord(record)
         } else {
           // Missing, or marked as deleted (adapters still find records marked as deleted)
-          observer.next(null)
+          emitMissing()
         }
       })
 

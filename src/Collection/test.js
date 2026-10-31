@@ -626,6 +626,31 @@ describe('observeRecord', () => {
     expect(t1._subscribers.length).toBe(0)
     expect(t1Again._subscribers.length).toBe(1)
   })
+  it('emits null if the record is created and deleted while the initial fetch is pending', async () => {
+    const { database, tasks, adapter } = mockDatabase()
+
+    let finishFind = null
+    adapter.find = jest.fn().mockImplementation((table, id, callback) => {
+      finishFind = () => callback({ value: null })
+    })
+
+    const observer = jest.fn()
+    tasks.observeRecord('t1').subscribe(observer)
+    expect(observer).toHaveBeenCalledTimes(0)
+
+    await database.experimentalBatchNotifications(async () => {
+      const t1 = await createWithId(database, tasks, 't1')
+      await database.write(() => t1.destroyPermanently())
+    })
+    expect(observer.mock.calls).toEqual([[null]])
+
+    finishFind()
+    expect(observer.mock.calls).toEqual([[null]])
+
+    // ...and still recovers
+    const t1Again = await createWithId(database, tasks, 't1')
+    expect(observer.mock.calls).toEqual([[null], [t1Again]])
+  })
   it('ignores the initial fetch result if the record changed in the meantime', async () => {
     const { database, tasks, adapter } = mockDatabase()
 
