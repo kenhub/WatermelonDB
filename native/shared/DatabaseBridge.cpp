@@ -109,7 +109,9 @@ void Database::install(jsi::Runtime *runtime) {
                 database->unsafeResetDatabase(schema, schemaVersion);
             } catch (const std::exception &ex) {
                 consoleError("Failed to set up the database correctly - " + std::string(ex.what()));
-                std::abort();
+                // NOTE: Thrown errors reach JS as a rejected setup promise (and onSetUpError). The schema was
+                // applied in a transaction, so the database is empty but consistent and can be set up again
+                throw jsi::JSError(rt, ex.what());
             }
 
             database->initialized_ = true;
@@ -125,7 +127,7 @@ void Database::install(jsi::Runtime *runtime) {
                 database->migrate(migrationSchema, fromVersion, toVersion);
             } catch (const std::exception &ex) {
                 consoleError("Failed to migrate the database correctly - " + std::string(ex.what()));
-                return makeError(rt, ex.what());
+                throw jsi::JSError(rt, ex.what());
             }
 
             database->initialized_ = true;
@@ -209,8 +211,10 @@ void Database::install(jsi::Runtime *runtime) {
                 return jsi::Value::undefined();
             } catch (const std::exception &ex) {
                 consoleError("Failed to reset database correctly - " + std::string(ex.what()));
-                // Partially reset database is likely corrupted, so it's probably less bad to crash
-                std::abort();
+                // NOTE: The reset is applied in a transaction that is rolled back on failure, so the database is
+                // left empty but consistent and the connection stays open: JS gets a rejected promise and can
+                // retry unsafeResetDatabase() (same as the non-JSI bridges) instead of the app crashing
+                throw jsi::JSError(rt, ex.what());
             }
         });
         createMethod(rt, adapter, "unsafeClose", 0, [database](jsi::Runtime &rt, const jsi::Value *args) {

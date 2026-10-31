@@ -46,11 +46,11 @@ void Database::destroy() {
         return;
     }
     isDestroyed_ = true;
-    for (auto const &cachedStatement : cachedStatements_) {
-        sqlite3_stmt *statement = cachedStatement.second;
-        sqlite3_finalize(statement);
+    for (auto const &cachedStatement : statementCache_) {
+        sqlite3_finalize(cachedStatement.stmt);
     }
     cachedStatements_ = {};
+    statementCache_ = {};
     db_->destroy();
 }
 
@@ -81,7 +81,13 @@ void Database::unsafeResetDatabase(jsi::String &schema, int schemaVersion) {
         throw jsi::JSError(rt, "Failed to enable reset database mode");
     }
     // NOTE: We can't VACUUM in a transaction
-    executeMultiple("vacuum");
+    try {
+        executeMultiple("vacuum");
+    } catch (...) {
+        // NOTE: Reset mode must not stay enabled on a connection that keeps being used
+        sqlite3_db_config(db_->sqlite, SQLITE_DBCONFIG_RESET_DATABASE, 0, 0);
+        throw;
+    }
 
     if (sqlite3_db_config(db_->sqlite, SQLITE_DBCONFIG_RESET_DATABASE, 0, 0) != SQLITE_OK) {
         throw jsi::JSError(rt, "Failed to disable reset database mode");
