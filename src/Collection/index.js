@@ -135,6 +135,10 @@ export default class Collection<Record: Model> {
       let unsubscribed = false
       let observedRecord: ?Record = null
       let unsubscribeFromRecord: ?Unsubscribe = null
+      let unsubscribeFromCollection: ?Unsubscribe = null
+      // Set once a change notification for this ID arrives - from then on, the record cache is
+      // the source of truth, and the (possibly outdated) result of the initial fetch is ignored
+      let initialFetchSuperseded = false
 
       const stopObservingRecord = () => {
         unsubscribeFromRecord && unsubscribeFromRecord()
@@ -142,7 +146,20 @@ export default class Collection<Record: Model> {
         observedRecord = null
       }
 
+      const stopObservingCollection = () => {
+        unsubscribeFromCollection && unsubscribeFromCollection()
+        unsubscribeFromCollection = null
+      }
+
+      // Caches are updated before change notifications are sent, so at notification time the
+      // cache tells us if a (non-deleted) record with this ID currently exists
+      const getLiveCachedRecord = (): ?Record => {
+        const record = this._cache.get(id)
+        return record && record.syncStatus !== 'deleted' ? record : null
+      }
+
       const observeExistingRecord = (record: Record) => {
+        stopObservingCollection()
         stopObservingRecord()
         observedRecord = record
         // Subscribe before emitting, so that if the consumer unsubscribes synchronously,
@@ -153,7 +170,9 @@ export default class Collection<Record: Model> {
           }
           if (isDeleted) {
             stopObservingRecord()
-            observer.next(null)
+            // The record might have been re-created in the same batch
+            const recreatedRecord = getLiveCachedRecord()
+            recreatedRecord ? observeExistingRecord(recreatedRecord) : observeMissingRecord()
           } else {
             observer.next(record)
           }
@@ -161,21 +180,27 @@ export default class Collection<Record: Model> {
         observer.next(record)
       }
 
-      // Watch for a record with this ID being created (or re-created after deletion)
-      const unsubscribeFromCollection = this.experimentalSubscribe((changes) => {
-        if (unsubscribed) {
-          return
-        }
-        changes.forEach(({ record, type }) => {
-          if (type === 'created' && record.id === id && record !== observedRecord) {
-            observeExistingRecord(record)
+      // While the record is missing, watch for a record with this ID being created. (Once it
+      // exists, we only listen to that record, so that we don't have to scan every change)
+      const startObservingCollection = () => {
+        unsubscribeFromCollection = this.experimentalSubscribe((changes) => {
+          if (unsubscribed || !changes.some(({ record }) => record.id === id)) {
+            return
           }
+          initialFetchSuperseded = true
+          const record = getLiveCachedRecord()
+          record && observeExistingRecord(record)
         })
-      })
+      }
 
+      const observeMissingRecord = () => {
+        startObservingCollection()
+        observer.next(null)
+      }
+
+      startObservingCollection()
       this._fetchRecordIfExists(id, (result) => {
-        if (unsubscribed || observedRecord) {
-          // Unsubscribed, or a `created` notification arrived while we were fetching
+        if (unsubscribed || initialFetchSuperseded || observedRecord) {
           return
         }
         const record = result.value
@@ -191,7 +216,7 @@ export default class Collection<Record: Model> {
 
       return () => {
         unsubscribed = true
-        unsubscribeFromCollection()
+        stopObservingCollection()
         stopObservingRecord()
       }
     })
