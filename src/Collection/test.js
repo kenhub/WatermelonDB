@@ -1,3 +1,4 @@
+import { filter, take } from 'rxjs/operators'
 import { expectToRejectWithMessage } from '../__tests__/utils'
 import { noop } from '../utils/fp'
 
@@ -517,6 +518,60 @@ describe('observeRecord', () => {
 
     finishFind()
     expect(observer).toHaveBeenCalledTimes(1)
+  })
+  it('notifies every subscription when the record is deleted', async () => {
+    const { database, tasks } = mockDatabase()
+    const t1 = await createWithId(database, tasks, 't1')
+
+    const observers = [jest.fn(), jest.fn(), jest.fn()]
+    observers.forEach((observer) => tasks.observeRecord('t1').subscribe(observer))
+    observers.forEach((observer) => expect(observer).toHaveBeenLastCalledWith(t1))
+
+    await database.write(() => t1.markAsDeleted())
+    observers.forEach((observer) => {
+      expect(observer).toHaveBeenCalledTimes(2)
+      expect(observer).toHaveBeenLastCalledWith(null)
+    })
+    expect(t1._subscribers.length).toBe(0)
+  })
+  it('emits null for records marked as deleted', async () => {
+    const { database, tasks } = mockDatabase()
+    const t1 = await createWithId(database, tasks, 't1')
+    await database.write(() => t1.markAsDeleted())
+    expect(tasks._cache.get('t1')).toBe(undefined)
+
+    const observer = jest.fn()
+    tasks.observeRecord('t1').subscribe(observer)
+    await new Promise(process.nextTick)
+
+    expect(observer).toHaveBeenCalledTimes(1)
+    expect(observer).toHaveBeenLastCalledWith(null)
+
+    // find() semantics are unchanged
+    expect((await tasks.find('t1')).syncStatus).toBe('deleted')
+  })
+  it('does not leak listeners when the consumer unsubscribes synchronously', async () => {
+    const { database, tasks } = mockDatabase()
+
+    // record created later
+    const observer = jest.fn()
+    tasks
+      .observeRecord('t1')
+      .pipe(filter(Boolean), take(1))
+      .subscribe(observer)
+    await new Promise(process.nextTick)
+    const t1 = await createWithId(database, tasks, 't1')
+    expect(observer).toHaveBeenCalledTimes(1)
+    expect(observer).toHaveBeenLastCalledWith(t1)
+    expect(t1._subscribers.length).toBe(0)
+    expect(tasks._subscribers.length).toBe(0)
+
+    // cached record emitted synchronously on subscription
+    const observer2 = jest.fn()
+    tasks.observeRecord('t1').pipe(take(1)).subscribe(observer2)
+    expect(observer2).toHaveBeenLastCalledWith(t1)
+    expect(t1._subscribers.length).toBe(0)
+    expect(tasks._subscribers.length).toBe(0)
   })
   it('errors for invalid ids', async () => {
     const { tasks } = mockDatabase()

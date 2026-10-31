@@ -13,10 +13,14 @@ import type Model, { RecordId } from '../Model'
 
 // Failsafe relations emit `null` (and keep observing) instead of erroring when the related
 // record does not exist, so that they recover when the record is created later
-const observeRecord = <T: ?Model>(relation: Relation<T>, id: RecordId): Observable<T> => {
+const observeRecord = <T: ?Model>(relation: Relation<T>, id: ?RecordId): Observable<T> => {
   const collection = relation._model.collections.get(relation._relationTableName)
+  if (relation._isFailsafe) {
+    // $FlowFixMe
+    return id ? collection.observeRecord(id) : of$(null)
+  }
   // $FlowFixMe
-  return relation._isFailsafe ? collection.observeRecord(id) : collection.findAndObserve(id)
+  return collection.findAndObserve(id)
 }
 
 const getImmutableObservable = <T: ?Model>(relation: Relation<T>): Observable<T> =>

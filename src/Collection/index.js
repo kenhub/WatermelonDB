@@ -122,7 +122,7 @@ export default class Collection<Record: Model> {
    * This is a failsafe version of `findAndObserve()`. The returned Observable never errors or
    * completes because of the record's existence. Instead, it emits:
    * - the record, if it exists, and then again every time it changes
-   * - `null`, if the record does not exist (yet)
+   * - `null`, if the record does not exist (yet) or is marked as deleted
    * - the record, once a record with this ID is created (e.g. arrives via sync)
    * - `null` again, if the record is deleted — and the record again, if it is re-created
    *
@@ -145,7 +145,8 @@ export default class Collection<Record: Model> {
       const observeExistingRecord = (record: Record) => {
         stopObservingRecord()
         observedRecord = record
-        observer.next(record)
+        // Subscribe before emitting, so that if the consumer unsubscribes synchronously,
+        // the teardown can remove this listener
         unsubscribeFromRecord = record.experimentalSubscribe((isDeleted) => {
           if (unsubscribed) {
             return
@@ -157,6 +158,7 @@ export default class Collection<Record: Model> {
             observer.next(record)
           }
         })
+        observer.next(record)
       }
 
       // Watch for a record with this ID being created (or re-created after deletion)
@@ -176,11 +178,13 @@ export default class Collection<Record: Model> {
           // Unsubscribed, or a `created` notification arrived while we were fetching
           return
         }
+        const record = result.value
         if (result.error) {
           observer.error(result.error)
-        } else if (result.value) {
-          observeExistingRecord(result.value)
+        } else if (record && record.syncStatus !== 'deleted') {
+          observeExistingRecord(record)
         } else {
+          // Missing, or marked as deleted (adapters still find records marked as deleted)
           observer.next(null)
         }
       })
@@ -346,7 +350,8 @@ export default class Collection<Record: Model> {
     ]): void => {
       subscriber(operations)
     }
-    this._subscribers.forEach(collectionChangeNotifySubscribers)
+    // Iterate over a copy, so that subscribers can safely unsubscribe while being notified
+    this._subscribers.slice().forEach(collectionChangeNotifySubscribers)
     this.changes.next(operations)
 
     const collectionChangeNotifyModels = ({ record, type }: CollectionChange<Record>): void => {

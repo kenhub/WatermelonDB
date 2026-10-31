@@ -112,6 +112,19 @@ describe('decorators/experimentalFailsafe', () => {
     expect(observer).toHaveBeenLastCalledWith(section)
     subscription.unsubscribe()
   })
+  it('observes an immutable relation with a null id as null, not the fallback', async () => {
+    const { tasks, db } = mockDatabase()
+    const task = await db.write(() => tasks.create())
+    const proxy = makeProxy(task, 'fallback')
+
+    const observer = jest.fn()
+    const complete = jest.fn()
+    proxy.projectSection.observe().subscribe(observer, undefined, complete)
+    await new Promise(process.nextTick)
+
+    expect(observer).toHaveBeenCalledTimes(1)
+    expect(observer).toHaveBeenLastCalledWith(null)
+  })
   it('still catches errors of arbitrary observable-like values', async () => {
     class Proxy {
       @experimentalFailsafe('fallback')

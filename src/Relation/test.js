@@ -248,6 +248,24 @@ describe('Relation', () => {
     expect(observer).toHaveBeenLastCalledWith(secondary)
     subscription.unsubscribe()
   })
+  it('observes a failsafe immutable relation with a null id as null', async () => {
+    const { tasks, db } = mockDatabase()
+    const primary = await db.write(() => tasks.create())
+    const relation = new Relation(primary, 'mock_project_sections', 'project_section_id', {
+      isImmutable: true,
+      failsafe: true,
+    })
+    expect(relation.id).toBe(null)
+
+    const observer = jest.fn()
+    const error = jest.fn()
+    relation.observe().subscribe(observer, error)
+    await new Promise(process.nextTick)
+
+    expect(observer).toHaveBeenCalledTimes(1)
+    expect(observer).toHaveBeenLastCalledWith(null)
+    expect(error).toHaveBeenCalledTimes(0)
+  })
   it('caches observable', () => {
     const { tasks } = mockDatabase()
     const model = new MockTask(tasks, {})
