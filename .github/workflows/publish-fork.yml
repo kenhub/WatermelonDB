@@ -29,7 +29,8 @@ jobs:
       - name: Check and build
         run: |
           yarn eslint
-          yarn jest --config=./jest.config.js --forceExit --testPathIgnorePatterns 'src/adapters/sqlite/test.js'
+          # --testPathIgnorePatterns replaces Jest's default, so /node_modules/ is repeated
+          yarn jest --config=./jest.config.js --forceExit --testPathIgnorePatterns '/node_modules/' 'src/adapters/sqlite/test.js'
           yarn build
 
       - name: Name and version the package after the tag
