@@ -85,6 +85,10 @@ void Database::unsafeResetDatabase(jsi::String &schema, int schemaVersion) {
     // They seem to be enabling "defensive" config. So we use another obscure method to clear the database
     // https://www.sqlite.org/c3ref/c_dbconfig_defensive.html#sqlitedbconfigresetdatabase
 
+    // NOTE: Clear cached record IDs before anything that can fail: JS clears its record cache even if the
+    // reset fails, and IDs left cached here would make later fetches return records JS no longer has
+    cachedRecords_ = {};
+
     if (sqlite3_db_config(db_->sqlite, SQLITE_DBCONFIG_RESET_DATABASE, 1, 0) != SQLITE_OK) {
         throw jsi::JSError(rt, "Failed to enable reset database mode");
     }
@@ -103,8 +107,6 @@ void Database::unsafeResetDatabase(jsi::String &schema, int schemaVersion) {
 
     beginTransaction();
     try {
-        cachedRecords_ = {};
-
         // Reinitialize schema
         executeMultiple(schema.utf8(rt));
         setUserVersion(schemaVersion);

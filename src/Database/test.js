@@ -78,6 +78,28 @@ describe('Database', () => {
       await expectToRejectWithMessage(tasks.find(m1.id), 'not found')
       expect(await database.adapter.getLocal('test')).toBe(null)
     })
+    it('keeps adapter and JS record caches consistent when a reset fails', async () => {
+      const { database, tasks } = mockDatabase()
+
+      const m1 = await database.write(() => tasks.create())
+      expect(await tasks.find(m1.id)).toBe(m1)
+      const driver = database.adapter.underlyingAdapter._driver
+
+      // the reset fails before the adapter erased anything
+      jest.spyOn(driver, '_assertNotBroken').mockImplementationOnce(() => {
+        throw new Error('broken driver')
+      })
+      await expectToRejectWithMessage(
+        database.write(() => database.unsafeResetDatabase()),
+        'broken driver',
+      )
+
+      // the record is still in the database, and must be fetched in full (not as a cached ID,
+      // since the JS record cache was cleared)
+      const m1Again = await tasks.find(m1.id)
+      expect(m1Again.id).toBe(m1.id)
+      expect(m1Again).not.toBe(m1)
+    })
     it('increments reset count after every reset', async () => {
       const { database } = mockDatabase()
       expect(database._resetCount).toBe(0)
