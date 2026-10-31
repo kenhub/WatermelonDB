@@ -74,6 +74,8 @@ class Comment extends Model {
 }
 ```
 
+If you use TypeScript or Flow, declare such a relation with a nullable type (e.g. `author: Relation<User | undefined>`), since it can emit `undefined` (or your fallback). The same goes for relations whose ID is optional, which emit `null` when the ID is not set.
+
 ### Fetching
 
 To simply get the related record, use `fetch`. You might need it [in a Writer](./Writers.md)

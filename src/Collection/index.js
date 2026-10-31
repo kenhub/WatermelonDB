@@ -182,7 +182,9 @@ export default class Collection<Record: Model> {
             // The record might have been re-created in the same batch
             const recreatedRecord = getLiveCachedRecord()
             recreatedRecord ? observeExistingRecord(recreatedRecord) : observeMissingRecord()
-          } else {
+          } else if (this._cache.get(id) === record) {
+            // (With batched notifications, the record might have been deleted in the meantime -
+            // in that case, a deletion notification follows, so don't emit the deleted record)
             observer.next(record)
           }
         })

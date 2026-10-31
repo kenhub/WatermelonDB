@@ -670,6 +670,20 @@ describe('observeRecord', () => {
     finishFind()
     expect(observer.mock.calls).toEqual([[t1], [null]])
   })
+  it('does not emit an update of a record deleted within batched notifications', async () => {
+    const { database, tasks } = mockDatabase()
+    const t1 = await createWithId(database, tasks, 't1')
+
+    const observer = jest.fn()
+    tasks.observeRecord('t1').subscribe(observer)
+    expect(observer.mock.calls).toEqual([[t1]])
+
+    await database.experimentalBatchNotifications(async () => {
+      await database.write(() => t1.update())
+      await database.write(() => t1.markAsDeleted())
+    })
+    expect(observer.mock.calls).toEqual([[t1], [null]])
+  })
   it('errors for invalid ids', async () => {
     const { tasks } = mockDatabase()
 
