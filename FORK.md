@@ -15,7 +15,7 @@ upstream as pull requests.
 
 ## Releasing
 
-The package is published to npm as the private `@kenhub-gmbh/watermelondb`; the repository keeps
+The package is published to npm as `@kenhub-gmbh/watermelondb`; the repository keeps
 upstream's package name so upstream syncs stay conflict-free, and the built `dist/` is renamed at
 publish time by `.github/workflows/publish-fork.yml`. To release:
 

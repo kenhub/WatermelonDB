@@ -55,5 +55,5 @@ jobs:
 
       # a prerelease version must name its dist-tag; consumers pin the exact version
       - name: Publish
-        run: npm publish --access restricted --tag kenhub
+        run: npm publish --access public --tag kenhub
         working-directory: dist
