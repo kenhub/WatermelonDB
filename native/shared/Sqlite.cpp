@@ -17,7 +17,7 @@ std::string resolveDatabasePath(std::string path) {
     }
 }
 
-SqliteDb::SqliteDb(std::string path) {
+SqliteDb::SqliteDb(std::string path) : sqlite(nullptr), isDestroyed_(false) {
     consoleLog("Will open database...");
     platform::initializeSqlite();
     #ifndef ANDROID
@@ -30,6 +30,10 @@ SqliteDb::SqliteDb(std::string path) {
     if (openResult != SQLITE_OK) {
         if (sqlite) {
             auto error = std::string(sqlite3_errmsg(sqlite));
+            // NOTE: sqlite3_open returns a handle even on failure, and the destructor won't run when the
+            // constructor throws, so close it here to not leak it
+            sqlite3_close(sqlite);
+            sqlite = nullptr;
             throw std::runtime_error("Error while trying to open database - " + error);
         } else {
             // whoa, sqlite couldn't allocate memory

@@ -202,12 +202,17 @@ void Database::install(jsi::Runtime *runtime) {
             return jsi::Value::undefined();
         });
         createMethod(rt, adapter, "unsafeResetDatabase", 2, [database](jsi::Runtime &rt, const jsi::Value *args) {
-            assert(database->initialized_);
+            // NOTE: Resetting is allowed on an open database that was not (successfully) set up: that is how
+            // the app recovers from a failed schema setup or migration (onSetUpError -> unsafeResetDatabase())
+            if (database->isDestroyed_) {
+                throw jsi::JSError(rt, "Cannot reset database - it has been closed");
+            }
             jsi::String schema = args[0].getString(rt);
             int schemaVersion = (int)args[1].getNumber();
 
             try {
                 database->unsafeResetDatabase(schema, schemaVersion);
+                database->initialized_ = true;
                 return jsi::Value::undefined();
             } catch (const std::exception &ex) {
                 consoleError("Failed to reset database correctly - " + std::string(ex.what()));
@@ -218,7 +223,7 @@ void Database::install(jsi::Runtime *runtime) {
             }
         });
         createMethod(rt, adapter, "unsafeClose", 0, [database](jsi::Runtime &rt, const jsi::Value *args) {
-            assert(database->initialized_);
+            // NOTE: Closing is allowed on a database that was not (successfully) set up
             database->destroy();
             database->initialized_ = false;
             return jsi::Value::undefined();
