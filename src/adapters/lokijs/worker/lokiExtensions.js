@@ -19,15 +19,16 @@ function callSafely<T>(callback: ?(T) => void, arg: T): void {
 // Resolves to `null` if IndexedDB can be used, or to an Error explaining why it can't
 const checkIDB = (onQuotaExceededError: ?(error: Error) => void): Promise<?Error> => {
   return new Promise((resolve) => {
-    // $FlowFixMe
-    if (typeof indexedDB === 'undefined') {
-      resolve(new Error('IndexedDB is not available in this environment'))
-      return
-    }
-
-    // in Firefox private mode, IDB will be available, but will fail to open
     let checkRequest: IDBOpenDBRequest
     try {
+      // NOTE: Even accessing `indexedDB` can throw (e.g. in a sandboxed iframe)
+      // $FlowFixMe
+      if (typeof indexedDB === 'undefined') {
+        resolve(new Error('IndexedDB is not available in this environment'))
+        return
+      }
+
+      // in Firefox private mode, IDB will be available, but will fail to open
       // $FlowFixMe
       checkRequest = indexedDB.open('WatermelonIDBChecker')
     } catch (error) {
