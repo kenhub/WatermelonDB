@@ -115,6 +115,16 @@ function normalizePersistenceError(rawError: any): Error {
   return new Error(`Unknown error while saving database: ${String(rawError)}`)
 }
 
+// App callbacks are called from Loki timers and IndexedDB event handlers, and each of them must
+// be notified even if another one throws, so errors thrown by them are logged, not rethrown
+function callSafely<T>(callback: ?(T) => void, arg: T): void {
+  try {
+    callback && callback(arg)
+  } catch (error) {
+    logger.error('[Loki] Error thrown by a persistence error callback', error)
+  }
+}
+
 function createPersistenceErrorReporter(options: LokiAdapterOptions): {
   onSaveResult: (rawError: any) => void,
   reportFatal: (error: Error) => void,
@@ -127,9 +137,9 @@ function createPersistenceErrorReporter(options: LokiAdapterOptions): {
 
   const report = (error: Error) => {
     if (error && error.name === 'QuotaExceededError') {
-      onQuotaExceededError && onQuotaExceededError(error)
+      callSafely(onQuotaExceededError, error)
     }
-    onPersistenceError && onPersistenceError(error)
+    callSafely(onPersistenceError, error)
   }
 
   return {
@@ -194,13 +204,10 @@ export async function newLoki(
       // Stop saving and accepting changes before notifying app callbacks, so that they can't make
       // changes anymore, and so that a throwing callback can't prevent it
       loki && lokiFatalError(loki)
-      onPersistenceLost && onPersistenceLost(error)
-      try {
-        reporter.reportFatal(error)
-      } finally {
-        // $FlowFixMe
-        userOnVersionChange && userOnVersionChange(event)
-      }
+      callSafely(onPersistenceLost, error)
+      reporter.reportFatal(error)
+      // $FlowFixMe
+      callSafely(userOnVersionChange, event)
     }
   }
 

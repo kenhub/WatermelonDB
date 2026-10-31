@@ -26,6 +26,8 @@ class FakeIncrementalAdapter {
 
   saves = 0
 
+  deletes = 0
+
   loadDatabase(dbname, callback) {
     callback(null)
   }
@@ -38,6 +40,7 @@ class FakeIncrementalAdapter {
   }
 
   deleteDatabase(dbname, callback) {
+    this.deletes += 1
     callback({ success: true })
   }
 }
@@ -161,14 +164,22 @@ describe('LokiJSAdapter persistence errors', () => {
 
     // reads still work
     expect(await adapter.find('tasks', `t${taskId - 1}`)).toBeTruthy()
+
+    // database can't be deleted and re-created
+    const deletesBefore = persistenceAdapter.deletes
+    await expect(adapter.unsafeResetDatabase()).rejects.toThrow('broken state')
+    expect(persistenceAdapter.deletes).toBe(deletesBefore)
   })
 
-  it('breaks the driver before notifying, even if a callback throws', async () => {
+  it('breaks the driver before notifying, and notifies even if callbacks throw', async () => {
     const persistenceAdapter = new FakeIncrementalAdapter()
     const onversionchange = jest.fn()
     let wasBrokenWhenNotified = false
     const lokiAdapter = makeAdapter({
       _testLokiAdapter: persistenceAdapter,
+      _onFatalError: () => {
+        throw new Error('fatal error handler failed')
+      },
       onPersistenceError: () => {
         wasBrokenWhenNotified = lokiAdapter._driver._isBroken
         throw new Error('handler failed')
@@ -178,12 +189,29 @@ describe('LokiJSAdapter persistence errors', () => {
     const adapter = new DatabaseAdapterCompat(lokiAdapter)
     await writeTask(adapter)
 
-    expect(() => persistenceAdapter.options.onversionchange({ type: 'versionchange' })).toThrow(
-      'handler failed',
-    )
+    persistenceAdapter.options.onversionchange({ type: 'versionchange' })
     expect(wasBrokenWhenNotified).toBe(true)
     expect(onversionchange).toHaveBeenCalledTimes(1)
     await expect(writeTask(adapter)).rejects.toThrow('broken state')
+  })
+
+  it('reports a failing save to onPersistenceError even if onQuotaExceededError throws', async () => {
+    const persistenceAdapter = new FakeIncrementalAdapter()
+    const onPersistenceError = jest.fn()
+    const adapter = new DatabaseAdapterCompat(
+      makeAdapter({
+        _testLokiAdapter: persistenceAdapter,
+        onPersistenceError,
+        onQuotaExceededError: () => {
+          throw new Error('quota handler failed')
+        },
+      }),
+    )
+    const error = quotaError()
+    persistenceAdapter.saveError = abortEvent(error)
+    await writeTask(adapter)
+    await waitFor(() => onPersistenceError.mock.calls.length === 1)
+    expect(onPersistenceError).toHaveBeenCalledWith(error)
   })
 })
 

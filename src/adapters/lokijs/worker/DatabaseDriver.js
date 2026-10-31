@@ -235,6 +235,9 @@ export default class DatabaseDriver {
   }
 
   async unsafeResetDatabase(): Promise<void> {
+    // A broken driver must not delete and re-create the database (e.g. if it was deleted in
+    // another tab, that would bring it back with this driver's autosave)
+    this._assertNotBroken()
     await deleteDatabase(this.loki)
 
     this.cachedRecords.clear()
