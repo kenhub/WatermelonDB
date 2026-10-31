@@ -251,6 +251,40 @@ describe('LokiJSAdapter in-memory fallback', () => {
     expect(onInMemoryFallback).not.toHaveBeenCalled()
   })
 
+  it('sets up in memory even if onInMemoryFallback throws', async () => {
+    const onSetUpError = jest.fn()
+    const adapter = new DatabaseAdapterCompat(
+      makeAdapter({
+        onSetUpError,
+        onInMemoryFallback: () => {
+          throw new Error('fallback handler failed')
+        },
+      }),
+    )
+    await writeTask(adapter)
+    expect(onSetUpError).not.toHaveBeenCalled()
+  })
+
+  it('handles IndexedDB throwing synchronously when opening', async () => {
+    const idbError = new Error('The operation is insecure.')
+    idbError.name = 'SecurityError'
+    global.indexedDB = {
+      open: () => {
+        throw idbError
+      },
+    }
+
+    const onInMemoryFallback = jest.fn()
+    await writeTask(new DatabaseAdapterCompat(makeAdapter({ onInMemoryFallback })))
+    expect(onInMemoryFallback).toHaveBeenCalledTimes(1)
+    expect(onInMemoryFallback.mock.calls[0][0].cause).toBe(idbError)
+
+    const setUpError = await new Promise((resolve) => {
+      makeAdapter({ allowInMemoryFallback: false, onSetUpError: resolve })
+    })
+    expect(setUpError.cause).toBe(idbError)
+  })
+
   it('reports why IndexedDB failed to open', async () => {
     const idbError = quotaError()
     global.indexedDB = {

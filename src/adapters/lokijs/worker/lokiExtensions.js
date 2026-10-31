@@ -6,6 +6,16 @@ import logger from '../../../utils/common/logger'
 import type { LokiAdapterOptions } from '../index'
 import type { Loki } from '../type'
 
+// App callbacks are called from Loki timers, IndexedDB event handlers and adapter setup, and must
+// not change what happens next (or prevent other callbacks), so errors thrown by them are logged
+function callSafely<T>(callback: ?(T) => void, arg: T): void {
+  try {
+    callback && callback(arg)
+  } catch (error) {
+    logger.error('[Loki] Error thrown by a LokiJSAdapter callback', error)
+  }
+}
+
 // Resolves to `null` if IndexedDB can be used, or to an Error explaining why it can't
 const checkIDB = (onQuotaExceededError: ?(error: Error) => void): Promise<?Error> => {
   return new Promise((resolve) => {
@@ -16,8 +26,16 @@ const checkIDB = (onQuotaExceededError: ?(error: Error) => void): Promise<?Error
     }
 
     // in Firefox private mode, IDB will be available, but will fail to open
-    // $FlowFixMe
-    const checkRequest: IDBOpenDBRequest = indexedDB.open('WatermelonIDBChecker')
+    let checkRequest: IDBOpenDBRequest
+    try {
+      // $FlowFixMe
+      checkRequest = indexedDB.open('WatermelonIDBChecker')
+    } catch (error) {
+      // e.g. SecurityError when storage access is denied
+      logger.error('[Loki] IndexedDB checker failed to open', error)
+      resolve(error)
+      return
+    }
     checkRequest.onsuccess = (e) => {
       const db: IDBDatabase = e.target.result
       db.close()
@@ -92,7 +110,7 @@ async function getLokiAdapter(options: LokiAdapterOptions): mixed {
   if (!reportedInMemoryFallbacks.has(options)) {
     reportedInMemoryFallbacks.add(options)
     logger.error(`${reason.message}. Falling back to in-memory database`)
-    onInMemoryFallback && onInMemoryFallback(reason)
+    callSafely(onInMemoryFallback, reason)
   }
 
   const { LokiMemoryAdapter } = options._betaLoki ? require('lokijs') : require('lokijs')
@@ -113,16 +131,6 @@ function normalizePersistenceError(rawError: any): Error {
     return new Error(`IndexedDB transaction failed (${rawError.type} event)`)
   }
   return new Error(`Unknown error while saving database: ${String(rawError)}`)
-}
-
-// App callbacks are called from Loki timers and IndexedDB event handlers, and each of them must
-// be notified even if another one throws, so errors thrown by them are logged, not rethrown
-function callSafely<T>(callback: ?(T) => void, arg: T): void {
-  try {
-    callback && callback(arg)
-  } catch (error) {
-    logger.error('[Loki] Error thrown by a persistence error callback', error)
-  }
 }
 
 function createPersistenceErrorReporter(options: LokiAdapterOptions): {
