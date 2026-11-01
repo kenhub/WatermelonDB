@@ -3,4 +3,30 @@
 set -x
 set -e
 
-xcodebuild -workspace native/iosTest/WatermelonTester.xcworkspace -scheme 'WatermelonTester' -destination 'name=iPhone 16,OS=18.1' test
+# Runner images change which simulators they ship, so unless IOS_DESTINATION is given, pick an
+# available iPhone on the runtime matching the selected Xcode's simulator SDK (or the newest older one)
+if [ -z "$IOS_DESTINATION" ]; then
+  SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
+  DEVICE_ID=$(xcrun simctl list devices available -j | SDK_VERSION="$SDK_VERSION" node -e '
+    const { devices } = JSON.parse(require("fs").readFileSync(0, "utf8"))
+    const toNum = (v) => v.split(/[.-]/).map(Number).reduce((acc, n, i) => acc + n / 1000 ** i, 0)
+    const sdk = toNum(process.env.SDK_VERSION)
+    const runtimes = Object.keys(devices)
+      .map((key) => ({ key, match: key.match(/SimRuntime\.iOS-([\d-]+)$/) }))
+      .filter(({ match }) => match && toNum(match[1]) <= sdk + 1e-9)
+      .sort((a, b) => toNum(b.match[1]) - toNum(a.match[1]))
+    for (const { key } of runtimes) {
+      const iphone = devices[key].find((device) => device.name.startsWith("iPhone"))
+      if (iphone) {
+        console.error(`Using ${iphone.name} on ${key}`)
+        console.log(iphone.udid)
+        process.exit(0)
+      }
+    }
+    console.error(`No available iPhone simulator for iOS ${process.env.SDK_VERSION} or older`)
+    process.exit(1)
+  ')
+  IOS_DESTINATION="id=$DEVICE_ID"
+fi
+
+xcodebuild -workspace native/iosTest/WatermelonTester.xcworkspace -scheme 'WatermelonTester' -destination "$IOS_DESTINATION" test
