@@ -55,7 +55,7 @@ export async function acquireDatabaseLock(
                 `[Loki] Exclusive database lock was lost (${error?.name}: ${error?.message}). To avoid overwriting changes made in another tab, this database will not be saved anymore. App must be reloaded.`,
               )
               lostError.name = 'DatabaseLockLostError'
-              onLockLost(lostError)
+              callSafely(onLockLost, lostError)
             } else {
               reject(error)
             }

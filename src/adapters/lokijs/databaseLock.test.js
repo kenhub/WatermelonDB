@@ -218,6 +218,30 @@ describe('LokiJSAdapter exclusiveLock', () => {
     )
   })
 
+  it('logs errors thrown by callbacks when the lock is lost', async () => {
+    const unhandledRejections = []
+    const onUnhandledRejection = (reason) => unhandledRejections.push(reason)
+    process.on('unhandledRejection', onUnhandledRejection)
+    try {
+      const _onFatalError = jest.fn(() => {
+        throw new Error('app callback failed')
+      })
+      const tab = openTab({ exclusiveLock: true, _onFatalError })
+      await tab.getLocal('foo')
+
+      locks.steal('WatermelonDB:app')
+      await sleep(10)
+
+      expect(_onFatalError).toHaveBeenCalledTimes(1)
+      expect(unhandledRejections).toEqual([])
+      await expect(tab.batch([['create', 'tasks', mockTaskRaw({ id: 't1' })]])).rejects.toThrow(
+        'broken',
+      )
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection)
+    }
+  })
+
   it('does not save or set up a database that was loading when the lock was lost', async () => {
     const persistenceAdapter = new HeldLoadAdapter()
     persistenceAdapter.holdLoads = true
