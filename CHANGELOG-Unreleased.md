@@ -2,6 +2,8 @@
 
 ### BREAKING CHANGES
 
+- [Windows] The bundled SQLite 3.54.1 does not compile for the Windows (UWP) project: `CreateFileW` and `AreFileApisANSI` are unavailable to Windows Store apps. The Windows port was already unmaintained and is not built on CI
+
 ### Deprecations
 
 ### New features
