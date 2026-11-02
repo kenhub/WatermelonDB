@@ -92,7 +92,8 @@
       <WarningLevel>Level4</WarningLevel>
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
       <DisableSpecificWarnings>4453;28204</DisableSpecificWarnings>
-      <PreprocessorDefinitions>SQLITE_OS_WINRT;_WINRT_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Windows Store build: current SQLite reads SQLITE_UWP, versions up to 3.46 read SQLITE_OS_WINRT -->
+      <PreprocessorDefinitions>SQLITE_UWP;SQLITE_OS_WINRT;_WINRT_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalUsingDirectories>$(WindowsSDK_WindowsMetadata);$(AdditionalUsingDirectories)</AdditionalUsingDirectories>
       <AdditionalIncludeDirectories>$(WatermelonJsiSharedDir);$(WatermelonSimdjsonDir);$(WatermelonSqliteDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
