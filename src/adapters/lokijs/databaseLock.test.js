@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto'
 import { LokiMemoryAdapter } from 'lokijs'
 
 import { testSchema, mockTaskRaw } from '../__tests__/helpers'
@@ -332,6 +333,86 @@ describe('LokiJSAdapter exclusiveLock', () => {
 
     const sameDatabase = openTab({ exclusiveLock: true, dbName: 'loki.db' }).getLocal('foo')
     expect(await isSettled(sameDatabase)).toBe(false)
+  })
+
+  describe('with IndexedDB', () => {
+    // Like openTab(), but persisted to (fake) IndexedDB using IncrementalIndexedDBAdapter
+    const openIdbTab = (dbName, options) =>
+      openTab({ dbName, _testLokiAdapter: undefined, exclusiveLock: true, ...options })
+
+    const lokiOf = (index) => adapters[index]._driver.loki
+
+    const closeTab = async (index) => {
+      const loki = lokiOf(index)
+      await waitFor(() => !loki.autosaveDirty() && !loki.throttledSavePending)
+      loki.autosaveDisable()
+      locks.closeHolder(`WatermelonDB:${loki.filename}`)
+    }
+
+    it('hands the database over to a waiting tab with all saved changes', async () => {
+      const dbName = `test${Math.random()}`
+      const tab1 = openIdbTab(dbName)
+      await tab1.batch([['create', 'tasks', mockTaskRaw({ id: 't1' })]])
+
+      const tab2 = openIdbTab(dbName)
+      const tab2Ready = tab2.getLocal('foo')
+      await tab1.batch([['create', 'tasks', mockTaskRaw({ id: 't2' })]])
+      expect(await isSettled(tab2Ready)).toBe(false)
+
+      await closeTab(0)
+      await tab2Ready
+      expect((await tab2.find('tasks', 't1')).id).toBe('t1')
+      expect((await tab2.find('tasks', 't2')).id).toBe('t2')
+    })
+
+    it(`does not overwrite the new holder's changes after losing the lock`, async () => {
+      const dbName = `test${Math.random()}`
+      const tab1 = openIdbTab(dbName)
+      await tab1.batch([['create', 'tasks', mockTaskRaw({ id: 't1' })]])
+      await waitFor(() => !lokiOf(0).autosaveDirty() && !lokiOf(0).throttledSavePending)
+
+      // tab1 has unsaved changes (and maybe a save in flight) when another tab takes over
+      await tab1.batch([['create', 'tasks', mockTaskRaw({ id: 'unsaved' })]])
+      const tab2 = openIdbTab(dbName)
+      const tab2Ready = tab2.getLocal('foo')
+      locks.steal(`WatermelonDB:${dbName}`)
+      locks.closeHolder(`WatermelonDB:${dbName}`)
+      await tab2Ready
+
+      await tab2.batch([['destroyPermanently', 'tasks', 't1']])
+      await tab2.batch([['create', 'tasks', mockTaskRaw({ id: 't2' })]])
+      await expect(tab1.batch([['create', 'tasks', mockTaskRaw({ id: 't3' })]])).rejects.toThrow(
+        'broken',
+      )
+      await sleep(50)
+      await closeTab(1)
+
+      const tab3 = openIdbTab(dbName)
+      expect(await tab3.find('tasks', 't1')).toBe(null)
+      expect((await tab3.find('tasks', 't2')).id).toBe('t2')
+      expect(await tab3.find('tasks', 't3')).toBe(null)
+    })
+
+    it(`does not delete the new holder's database when reset loses the lock`, async () => {
+      const dbName = `test${Math.random()}`
+      const tab1 = openIdbTab(dbName)
+      await tab1.batch([['create', 'tasks', mockTaskRaw({ id: 't1' })]])
+
+      // reset waits for the in-flight save, and loses the lock in the meantime
+      const reset = tab1.unsafeResetDatabase()
+      const tab2 = openIdbTab(dbName)
+      const tab2Ready = tab2.getLocal('foo')
+      locks.steal(`WatermelonDB:${dbName}`)
+      locks.closeHolder(`WatermelonDB:${dbName}`)
+      await reset.catch(() => {})
+      await tab2Ready
+      await tab2.batch([['create', 'tasks', mockTaskRaw({ id: 't2' })]])
+      await sleep(50)
+      await closeTab(1)
+
+      const tab3 = openIdbTab(dbName)
+      expect((await tab3.find('tasks', 't2')).id).toBe('t2')
+    })
   })
 
   it('opens the database without a lock if Web Locks API is not available', async () => {
