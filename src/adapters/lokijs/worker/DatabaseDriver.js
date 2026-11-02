@@ -364,6 +364,9 @@ export default class DatabaseDriver {
           await this._migrate(migrationSteps)
         } catch (error) {
           logger.error('[Loki] Migration failed', error)
+          // Steps that ran before the failure changed the database in memory. It must not be saved,
+          // so that the persisted database is left at the old version, unchanged
+          lokiFatalError(this.loki)
           throw error
         }
       } else {

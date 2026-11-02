@@ -149,6 +149,48 @@ describe('LokiJSAdapter migrations', () => {
     expect((await v2.adapter.find('tasks', 't1')).name).toBe('after')
   })
 
+  it('does not save changes made by a migration that fails', async () => {
+    const dbName = `test${Math.random()}`
+    const v1 = await openAdapter(dbName, schemaV1)
+    await v1.adapter.batch([
+      ['create', 'tasks', { id: 't1', name: 'before', _status: '', _changed: '' }],
+    ])
+    await closeAdapter(v1)
+
+    const failingMigration = new LokiJSAdapter({
+      dbName,
+      schema: bothTables(2),
+      migrations: schemaMigrations({
+        migrations: [
+          {
+            toVersion: 2,
+            steps: [
+              unsafeExecuteLoki((loki) => {
+                loki.getCollection('tasks').findAndUpdate({}, (raw) => {
+                  raw.name = 'partially migrated'
+                })
+                loki.getCollection('local_storage').insert({ key: 'foo', value: 'bar' })
+                throw new Error('Migration step failed')
+              }),
+            ],
+          },
+        ],
+      }),
+      useWebWorker: false,
+      useIncrementalIndexedDB: true,
+      extraLokiOptions: { autosaveInterval: 5 },
+      onSetUpError: () => {},
+    })
+    openAdapters.push(failingMigration)
+    await expect(new DatabaseAdapterCompat(failingMigration).getLocal('foo')).rejects.toThrow()
+    await sleep(50)
+
+    // still at version 1, unchanged
+    const reopened = await openAdapter(dbName, schemaV1)
+    expect((await reopened.adapter.find('tasks', 't1')).name).toBe('before')
+    expect(await reopened.adapter.getLocal('foo')).toBe(null)
+  })
+
   it('rejects unsafeExecuteLoki() steps with useWebWorker: true', () => {
     expect(
       () =>
