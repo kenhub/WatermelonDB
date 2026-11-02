@@ -11,6 +11,10 @@
 - [LokiJS] New `onInMemoryFallback` option: called when the database falls back to being in-memory only
 - New `Collection.observeRecord(id)`: a failsafe version of `findAndObserve(id)` that emits `null` while the record does not exist (instead of erroring), emits the record once it is created, and emits `null` (instead of completing) when it is deleted. `@experimentalFailsafe` relations now use it, so their `observe()` recovers when a missing related record is created later
 
+- New `destroyTable({ table })` migration step. On SQLite, it's `DROP TABLE IF EXISTS`. On LokiJS, the collection is removed and its data is deleted from IndexedDB, so it's no longer loaded and parsed on every launch (also if it was already removed from Loki)
+- [LokiJS] New `unsafeExecuteLoki(loki => {})` migration step, the LokiJS counterpart of `unsafeExecuteSql()`. It's ignored on SQLite
+- [LokiJS] `unsafeExecuteSql()` migration steps, which are ignored on LokiJS, now log a warning
+
 ### Fixes
 
 - [LokiJS] Multitab sync issue fix
