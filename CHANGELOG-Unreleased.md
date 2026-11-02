@@ -11,12 +11,17 @@
 - [LokiJS] New `onInMemoryFallback` option: called when the database falls back to being in-memory only
 - New `Collection.observeRecord(id)`: a failsafe version of `findAndObserve(id)` that emits `null` while the record does not exist (instead of erroring), emits the record once it is created, and emits `null` (instead of completing) when it is deleted. `@experimentalFailsafe` relations now use it, so their `observe()` recovers when a missing related record is created later
 
+- New `destroyTable({ table })` migration step. On SQLite, it's `DROP TABLE IF EXISTS`. On LokiJS, the collection is removed and its data is deleted from IndexedDB, so it's no longer loaded and parsed on every launch (also if it was already removed from Loki)
+- [LokiJS] New `unsafeExecuteLoki(loki => {})` migration step, the LokiJS counterpart of `unsafeExecuteSql()`. It's ignored on SQLite
+- [LokiJS] `unsafeExecuteSql()` migration steps, which are ignored on LokiJS, now log a warning
+
 ### Fixes
 
 - [Sync] A pulled changeset is now validated in full before any of it is applied (table and record shape, string ids, ids listed more than once in a table's created/updated/deleted). Before, an invalid record found halfway through left already-prepared records broken in memory, and updating them failed until the app restarted. Records with a non-string `id` are now rejected instead of being given a random id
 - [LokiJS] Multitab sync issue fix
 - [LokiJS] When IndexedDB database is deleted in another tab (`onversionchange`), the database is no longer re-created from this tab's memory on next autosave. Instead, the adapter stops saving, rejects further changes, and calls `onPersistenceError`
 - [LokiJS] Failures to save the database to IndexedDB are now always logged
+- [LokiJS] When a migration fails, changes made by the steps that ran before the failure are no longer autosaved under the old schema version
 - [LokiJS] When accessing or opening IndexedDB throws synchronously (e.g. `SecurityError` when storage access is denied), the adapter now falls back to an in-memory database like for other IndexedDB open failures (or fails setup with `allowInMemoryFallback: false`), instead of always failing setup
 - [Android] Added linker flag for building with 16kB page alignment
 - [TS] make catchError visible to typescript
