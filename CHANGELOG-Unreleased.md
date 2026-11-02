@@ -14,6 +14,7 @@
 - New `destroyTable({ table })` migration step. On SQLite, it's `DROP TABLE IF EXISTS`. On LokiJS, the collection is removed and its data is deleted from IndexedDB, so it's no longer loaded and parsed on every launch (also if it was already removed from Loki)
 - [LokiJS] New `unsafeExecuteLoki(loki => {})` migration step, the LokiJS counterpart of `unsafeExecuteSql()`. It's ignored on SQLite
 - [LokiJS] `unsafeExecuteSql()` migration steps, which are ignored on LokiJS, now log a warning
+- [LokiJS] New opt-in `exclusiveLock` option: only one browser tab at a time has the database open (using the Web Locks API), so tabs no longer overwrite each other's changes or undo a reset done in another tab. Other tabs wait until it's closed, and `onDatabaseLockedElsewhere` is called. Without the Web Locks API, the database is opened without a lock
 
 ### Fixes
 
@@ -22,6 +23,7 @@
 - [LokiJS] When IndexedDB database is deleted in another tab (`onversionchange`), the database is no longer re-created from this tab's memory on next autosave. Instead, the adapter stops saving, rejects further changes, and calls `onPersistenceError`
 - [LokiJS] Failures to save the database to IndexedDB are now always logged
 - [LokiJS] When a migration fails, changes made by the steps that ran before the failure are no longer autosaved under the old schema version
+- [LokiJS] After the database stops being saved (e.g. it was deleted in another tab), callbacks waiting for a save that was in progress (from `close()` or `unsafeResetDatabase()`) are now called with an error instead of never being called
 - [LokiJS] When accessing or opening IndexedDB throws synchronously (e.g. `SecurityError` when storage access is denied), the adapter now falls back to an in-memory database like for other IndexedDB open failures (or fails setup with `allowInMemoryFallback: false`), instead of always failing setup
 - [Android] Added linker flag for building with 16kB page alignment
 - [TS] make catchError visible to typescript
