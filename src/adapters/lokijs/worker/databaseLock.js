@@ -28,7 +28,8 @@ export async function acquireDatabaseLock(
     return
   }
 
-  const name = `WatermelonDB:${options.dbName || 'loki'}`
+  // NOTE: `loki.db` is Loki's default database name (used if dbName is not passed)
+  const name = `WatermelonDB:${options.dbName || 'loki.db'}`
 
   // NOTE: `request()` resolves (or rejects) when the lock is released, and rejects with AbortError
   // if it is stolen. Rejections before the lock is granted are passed to the caller.

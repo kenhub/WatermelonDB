@@ -77,8 +77,8 @@ const waitFor = async (predicate) => {
   throw new Error('Timed out waiting for condition')
 }
 
-// In-memory incremental persistence adapter. While `holdLoads` is set, loads only finish when
-// `finishLoad()` is called
+// In-memory incremental persistence adapter. While `holdLoads`/`holdSaves` is set, loads/saves only
+// finish when `finishLoad()`/`finishSave()` is called
 class HeldLoadAdapter {
   mode = 'incremental'
 
@@ -100,13 +100,28 @@ class HeldLoadAdapter {
     }
   }
 
+  holdSaves = false
+
+  finishSave = null
+
+  deletes = 0
+
   saveDatabase(dbname, getLokiCopy, callback) {
     getLokiCopy()
     this.saves += 1
-    setTimeout(() => callback(null), 0)
+    const finish = () => {
+      this.finishSave = null
+      callback(null)
+    }
+    if (this.holdSaves) {
+      this.finishSave = finish
+    } else {
+      setTimeout(finish, 0)
+    }
   }
 
   deleteDatabase(dbname, callback) {
+    this.deletes += 1
     callback({ success: true })
   }
 }
@@ -288,6 +303,35 @@ describe('LokiJSAdapter exclusiveLock', () => {
     expect(driver.loki.getCollection('tasks')).toBe(null)
     await sleep(30)
     expect(persistenceAdapter.saves).toBe(savesBeforeReload)
+  })
+
+  it('does not delete the database if the lock is lost while reset waits for a save', async () => {
+    const persistenceAdapter = new HeldLoadAdapter()
+    const tab = openTab({ exclusiveLock: true, _testLokiAdapter: persistenceAdapter })
+    await tab.getLocal('foo')
+
+    persistenceAdapter.holdSaves = true
+    await tab.batch([['create', 'tasks', mockTaskRaw({ id: 't1' })]])
+    await waitFor(() => persistenceAdapter.finishSave)
+    // (an empty database is reset during setup)
+    const deletesBeforeReset = persistenceAdapter.deletes
+    const reset = tab.unsafeResetDatabase()
+    await sleep(10)
+
+    locks.steal('WatermelonDB:app')
+    await sleep(0)
+    persistenceAdapter.finishSave()
+
+    await expect(reset).rejects.toThrow('broken')
+    expect(persistenceAdapter.deletes).toBe(deletesBeforeReset)
+  })
+
+  it(`uses Loki's default database name for the lock if dbName is not passed`, async () => {
+    await openTab({ exclusiveLock: true, dbName: undefined }).getLocal('foo')
+    expect(Array.from(locks.held.keys())).toEqual(['WatermelonDB:loki.db'])
+
+    const sameDatabase = openTab({ exclusiveLock: true, dbName: 'loki.db' }).getLocal('foo')
+    expect(await isSettled(sameDatabase)).toBe(false)
   })
 
   it('opens the database without a lock if Web Locks API is not available', async () => {
