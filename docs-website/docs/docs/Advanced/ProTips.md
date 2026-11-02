@@ -20,7 +20,7 @@ hide_title: true
 This usually only matters if you use raw SQL to use new SQLite versions:
 
 - On iOS, we use whatever SQLite version is bundled with the OS. [Here's a table of iOS version - SQLite version matches](https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS))
-- On Android in JSI mode, we use SQLite bundled with WatermelonDB. See `@nozbe/sqlite` NPM dependency version to see which SQLite version is bundled.
+- On Android in JSI mode, we use SQLite bundled with WatermelonDB. See `native/android-jsi/sqlite/README.md` for the bundled SQLite version.
 - On Android NOT in JSI mode, we use the SQLite bundled with the OS
 
 BTW: We're happy to accept contributions so that you can choose custom version or build of SQLite in all modes and on all platforms, but it needs to be opt-in (this adds to build time and binary size and most people don't need this)
