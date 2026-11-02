@@ -266,6 +266,11 @@ function validateRemoteRaw(raw: DirtyRaw): void {
   )
 }
 
+// Table changes are copied with object spread when applied, which only keeps own enumerable keys
+const isOwnArray = (obj: Object, key: string): boolean =>
+  // $FlowFixMe
+  Object.prototype.propertyIsEnumerable.call(obj, key) && Array.isArray(obj[key])
+
 // Checks the whole pulled changeset before anything is prepared. Preparing a record mutates its
 // cached JS model, so if a bad record were only found halfway through, the records prepared before
 // it would stay out of sync with the database (and couldn't be updated until the app restarts).
@@ -289,10 +294,10 @@ function validateRemoteChanges(remoteChanges: SyncDatabaseChangeSet, db: Databas
     invariant(
       changes &&
         typeof changes === 'object' &&
-        Array.isArray(changes.created) &&
-        Array.isArray(changes.updated) &&
-        Array.isArray(changes.deleted),
-      `[Sync] Invalid changeset supplied to Sync for table ${tableName}. Table changes must be an object with 'created', 'updated', and 'deleted' arrays`,
+        isOwnArray(changes, 'created') &&
+        isOwnArray(changes, 'updated') &&
+        isOwnArray(changes, 'deleted'),
+      `[Sync] Invalid changeset supplied to Sync for table ${tableName}. Table changes must be an object with own 'created', 'updated', and 'deleted' arrays`,
     )
 
     // mutating - perf critical

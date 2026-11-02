@@ -595,6 +595,17 @@ describe('applyRemoteChanges', () => {
         /invalid changeset supplied to sync for table mock_tasks/i,
       )
       await expectToRejectWithMessage(apply(null), /invalid changeset/i)
+      // changes are copied with object spread, which drops inherited and non-enumerable keys
+      await expectToRejectWithMessage(
+        apply(Object.create({ created: [], updated: [], deleted: [] })),
+        /invalid changeset supplied to sync for table mock_tasks/i,
+      )
+      const nonEnumerable = { created: [], updated: [] }
+      Object.defineProperty(nonEnumerable, 'deleted', { value: [], enumerable: false })
+      await expectToRejectWithMessage(
+        apply(nonEnumerable),
+        /invalid changeset supplied to sync for table mock_tasks/i,
+      )
       await expectToRejectWithMessage(
         apply({ created: [], updated: [], deleted: [{ id: 'tSynced' }] }),
         /deleted ids in table mock_tasks must be strings/i,
