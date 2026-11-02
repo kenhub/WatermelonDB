@@ -298,7 +298,15 @@ export default class DatabaseDriver {
   async _openDatabase(): Promise<void> {
     logger.log('[Loki] Initializing IndexedDB')
 
-    this.loki = await newLoki(this.options, (error) => this._breakDriver(error))
+    const loki = await newLoki(this.options, (error) => this._breakDriver(error))
+    this.loki = loki
+
+    // If the driver broke while the database was loading (e.g. the exclusive lock was lost), the
+    // new instance must not save either, and setup (or reset) must not continue
+    if (this._isBroken) {
+      lokiFatalError(loki)
+      this._assertNotBroken()
+    }
 
     logger.log('[Loki] Database loaded')
   }

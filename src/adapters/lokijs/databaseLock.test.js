@@ -66,6 +66,51 @@ class FakeLockManager {
   }
 }
 
+const waitFor = async (predicate) => {
+  for (let i = 0; i < 200; i += 1) {
+    if (predicate()) {
+      return
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(5)
+  }
+  throw new Error('Timed out waiting for condition')
+}
+
+// In-memory incremental persistence adapter. While `holdLoads` is set, loads only finish when
+// `finishLoad()` is called
+class HeldLoadAdapter {
+  mode = 'incremental'
+
+  holdLoads = false
+
+  finishLoad = null
+
+  saves = 0
+
+  loadDatabase(dbname, callback) {
+    const finish = () => {
+      this.finishLoad = null
+      callback(null)
+    }
+    if (this.holdLoads) {
+      this.finishLoad = finish
+    } else {
+      finish()
+    }
+  }
+
+  saveDatabase(dbname, getLokiCopy, callback) {
+    getLokiCopy()
+    this.saves += 1
+    setTimeout(() => callback(null), 0)
+  }
+
+  deleteDatabase(dbname, callback) {
+    callback({ success: true })
+  }
+}
+
 const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator')
 const setNavigator = (value) => {
   Object.defineProperty(global, 'navigator', { value, configurable: true, writable: true })
@@ -100,6 +145,7 @@ const openTab = (options) => {
     useWebWorker: false,
     useIncrementalIndexedDB: true,
     _testLokiAdapter: new LokiMemoryAdapter(),
+    extraLokiOptions: { autosaveInterval: 5 },
     ...options,
   })
   adapters.push(lokiAdapter)
@@ -170,6 +216,54 @@ describe('LokiJSAdapter exclusiveLock', () => {
     await expect(tab.batch([['create', 'tasks', mockTaskRaw({ id: 't2' })]])).rejects.toThrow(
       'broken',
     )
+  })
+
+  it('does not save or set up a database that was loading when the lock was lost', async () => {
+    const persistenceAdapter = new HeldLoadAdapter()
+    persistenceAdapter.holdLoads = true
+    const _onFatalError = jest.fn()
+    const onSetUpError = jest.fn()
+    const tab = openTab({
+      exclusiveLock: true,
+      _onFatalError,
+      onSetUpError,
+      _testLokiAdapter: persistenceAdapter,
+    })
+    const afterSetUp = tab.getLocal('foo')
+    await waitFor(() => persistenceAdapter.finishLoad)
+
+    locks.steal('WatermelonDB:app')
+    await sleep(0)
+    persistenceAdapter.finishLoad()
+
+    await expect(afterSetUp).rejects.toThrow('driver is not set up')
+    expect(onSetUpError).toHaveBeenCalledTimes(1)
+    expect(onSetUpError.mock.calls[0][0].message).toMatch('broken')
+    expect(_onFatalError).toHaveBeenCalledTimes(1)
+    expect(adapters[0]._driver).toBe(undefined)
+    expect(persistenceAdapter.saves).toBe(0)
+  })
+
+  it('does not save a database that was reloading during reset when the lock was lost', async () => {
+    const persistenceAdapter = new HeldLoadAdapter()
+    const tab = openTab({ exclusiveLock: true, _testLokiAdapter: persistenceAdapter })
+    await tab.batch([['create', 'tasks', mockTaskRaw({ id: 't1' })]])
+    const driver = adapters[0]._driver
+
+    persistenceAdapter.holdLoads = true
+    const reset = tab.unsafeResetDatabase()
+    await waitFor(() => persistenceAdapter.finishLoad)
+    const savesBeforeReload = persistenceAdapter.saves
+    locks.steal('WatermelonDB:app')
+    await sleep(0)
+    persistenceAdapter.finishLoad()
+
+    await expect(reset).rejects.toThrow('broken')
+    // the reloaded database is not set up and never saved
+    expect(driver.loki.autosave).toBe(false)
+    expect(driver.loki.getCollection('tasks')).toBe(null)
+    await sleep(30)
+    expect(persistenceAdapter.saves).toBe(savesBeforeReload)
   })
 
   it('opens the database without a lock if Web Locks API is not available', async () => {
