@@ -289,9 +289,17 @@ export function destroyCollection(loki: Loki, name: string): void {
     loki.collections.splice(index, 1)
   }
 
+  // NOTE: This relies on internals of IncrementalIndexedDBAdapter of the exact lokijs version
+  // WatermelonDB depends on (covered by tests against fake-indexeddb)
   const adapter: any = loki.persistenceAdapter
-  if (adapter && adapter.mode === 'incremental' && typeof adapter._putInChunks === 'function') {
-    getDestroyedCollections(adapter).add(name)
+  if (adapter && adapter.mode === 'incremental') {
+    if (typeof adapter._putInChunks === 'function' && typeof adapter.saveDatabase === 'function') {
+      getDestroyedCollections(adapter).add(name)
+    } else {
+      logger.warn(
+        `[Loki] Cannot delete persisted data of destroyed table ${name}, because the persistence adapter is not supported`,
+      )
+    }
   }
 }
 

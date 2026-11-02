@@ -12,7 +12,10 @@ import logger from '../../utils/common/logger'
 import Model from '../../Model'
 import Query from '../../Query'
 
+import Loki from 'lokijs'
+
 import LokiJSAdapter from './index'
+import { destroyCollection } from './worker/lokiExtensions'
 import DatabaseAdapterCompat from '../compat'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -189,6 +192,21 @@ describe('LokiJSAdapter migrations', () => {
     const reopened = await openAdapter(dbName, schemaV1)
     expect((await reopened.adapter.find('tasks', 't1')).name).toBe('before')
     expect(await reopened.adapter.getLocal('foo')).toBe(null)
+  })
+
+  it('warns if it cannot delete persisted data of a destroyed table', () => {
+    const warn = jest.spyOn(logger, 'warn')
+    // an incremental adapter that's not IncrementalIndexedDBAdapter
+    const persistenceAdapter = { mode: 'incremental', saveDatabase: () => {} }
+    const loki = new Loki('test', { adapter: persistenceAdapter })
+    loki.addCollection('comments')
+
+    destroyCollection(loki, 'comments')
+
+    expect(loki.getCollection('comments')).toBe(null)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Cannot delete persisted data of destroyed table comments'),
+    )
   })
 
   it('rejects unsafeExecuteLoki() steps with useWebWorker: true', () => {
