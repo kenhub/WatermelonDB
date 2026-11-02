@@ -363,8 +363,9 @@ export function lokiFatalError(loki: Loki): void {
       if (!callback && !waiting.length) {
         throw error
       }
+      // (one throwing callback must not prevent the others from being called)
       waiting.concat([callback]).forEach((waitingCallback) => {
-        typeof waitingCallback === 'function' && waitingCallback(error)
+        typeof waitingCallback === 'function' && callSafely(waitingCallback, error)
       })
     }
     loki.save = fatalHandler
