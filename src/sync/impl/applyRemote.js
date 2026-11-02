@@ -275,10 +275,14 @@ function validateRemoteChanges(remoteChanges: SyncDatabaseChangeSet, db: Databas
     `[Sync] Invalid changeset supplied to Sync. Changes must be an object of per-table changes`,
   )
 
-  Object.keys(remoteChanges).forEach((tableName) => {
+  // Enumerating the same way as getAllRecordsToApply (filterObj uses for-in), so that every table
+  // that is applied is validated first
+  // eslint-disable-next-line no-restricted-syntax, guard-for-in
+  for (const tableName in remoteChanges) {
     // Unknown tables are skipped (for forward-compatibility), so their changes are never applied
     if (!db.get((tableName: any))) {
-      return
+      // eslint-disable-next-line no-continue
+      continue
     }
 
     const changes = remoteChanges[(tableName: any)]
@@ -316,7 +320,7 @@ function validateRemoteChanges(remoteChanges: SyncDatabaseChangeSet, db: Databas
       )
       checkUnique(id)
     })
-  })
+  }
 }
 
 function prepareApplyRemoteChangesToCollection<T: Model>(

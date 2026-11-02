@@ -544,6 +544,31 @@ describe('applyRemoteChanges', () => {
       await expectDuplicateFails({ deleted: ['tSynced', 'tSynced'] })
       await expectNothingTouched(database, pSynced, tSynced)
     })
+    it('validates inherited table changes too', async () => {
+      const { database } = makeDatabase()
+      await makeLocalChanges(database)
+      const pSynced = { ...(await getRaw(database.get('mock_projects'), 'pSynced')) }
+      const tSynced = { ...(await getRaw(database.get('mock_tasks'), 'tSynced')) }
+
+      // for-in (used when applying changes) enumerates inherited keys
+      const changes = Object.create({
+        mock_tasks: {
+          created: [],
+          updated: [{ id: 'tSynced', name: 'remote', _status: 'synced' }],
+          deleted: [],
+        },
+      })
+      changes.mock_projects = {
+        created: [],
+        updated: [{ id: 'pSynced', name: 'remote' }],
+        deleted: [],
+      }
+      await expectToRejectWithMessage(
+        database.write(() => applyRemoteChanges(changes, { db: database })),
+        /invalid raw record/i,
+      )
+      await expectNothingTouched(database, pSynced, tSynced)
+    })
     it('rejects malformed table changes and ids', async () => {
       const { database } = makeDatabase()
       await makeLocalChanges(database)
