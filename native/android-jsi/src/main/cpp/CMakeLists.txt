@@ -35,7 +35,7 @@ endif()
 
 include_directories(
         ../../../../shared
-        ../../../sqlite
+        ../../../../sqlite
         ${NODE_MODULES_PATH_WM}/@nozbe/simdjson/src/
         ${NODE_MODULES_PATH_RN}/react-native/React
         ${NODE_MODULES_PATH_RN}/react-native/React/Base
@@ -72,7 +72,7 @@ file(GLOB SHARED_SRC_FILES ../../../../shared/*.cpp)
 
 add_library(watermelondb-jsi SHARED
         # vendor files
-        ../../../sqlite/sqlite3.c
+        ../../../../sqlite/sqlite3.c
         ${NODE_MODULES_PATH_WM}/@nozbe/simdjson/src/simdjson.cpp
         # our sources
         ${ANDROID_JSI_SRC_FILES}

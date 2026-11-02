@@ -50,7 +50,7 @@
 
 - [Sync] Columns set while creating a record (`collection.create()` builder) are now recorded in its `_changed` field. When a pull contains a record with the same id as a locally created, not yet pushed one, conflicts are now resolved per column (locally set columns win) instead of the remote version winning. A custom `conflictResolver` receives this per-column result as `resolved`. `_changed` is also included in pushed `created` records; it's reset when the record is marked as synced
 - Updated better-sqlite3 to 11.9.1
-- [Android] [JSI] Updated the bundled SQLite from 3.46.0 to 3.54.1. Its source is now part of the package (`native/android-jsi/sqlite`) instead of the `@nozbe/sqlite` dependency
+- [Android] [JSI] [Windows] Updated the bundled SQLite from 3.46.0 to 3.54.1. Its source is now part of the package (`native/sqlite`) instead of the `@nozbe/sqlite` dependency
 - [Sync] With `_unsafeBatchPerCollection`, pulled changes are now committed in batches one after another (each prepared right before it is committed) instead of all at once, so a failed batch leaves the following ones untouched. Observers are notified once per pull instead of once per table and batch
 - `database.experimentalBatchNotifications()` now merges all changes made within it into one notification (one call per `experimentalSubscribe` subscriber, one emission per changed collection) instead of replaying one notification per batch
 
