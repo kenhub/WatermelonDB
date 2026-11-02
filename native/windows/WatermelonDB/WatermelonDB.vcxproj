@@ -128,6 +128,7 @@
     <ClInclude Include="WMDatabaseBridge.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="$(WatermelonSqliteDir)sqlite3.h" />
+    <ClInclude Include="sqlite3_uwp.h" />
     <ClInclude Include="$(WatermelonSimdjsonDir)simdjson.h" />
   </ItemGroup>
   <ItemGroup>
@@ -148,7 +149,10 @@
     <ClCompile Include="DatabasePlatformWindows.cpp" />
     <ClCompile Include="WMDatabaseBridge.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
-    <ClCompile Include="$(WatermelonSqliteDir)sqlite3.c" />
+    <ClCompile Include="$(WatermelonSqliteDir)sqlite3.c">
+      <!-- Replaces the desktop-only file APIs SQLite 3.54 still calls in Windows Store builds -->
+      <ForcedIncludeFiles>$(MSBuildThisFileDirectory)sqlite3_uwp.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+    </ClCompile>
     <ClCompile Include="$(WatermelonSimdjsonDir)simdjson.cpp" />
   </ItemGroup>
   <ItemGroup>
