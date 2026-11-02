@@ -5,14 +5,14 @@ cmake_minimum_required(VERSION 3.4.1)
 # execute_process (COMMAND ln "-s" "src" "../../../../../node_modules/react-native/third-party/double-conversion-1.1.6/double-conversion")
 
 # NOTE: This may need to be bumped sometimes to force CMake caches to clear
-set(WMELON_JSI_BUMP 4)
+set(WMELON_JSI_BUMP 5)
 
 # -------------------------------------------------
 # Figure out where node_modules is
 # (surely there's a better way to do this)
 # This has to work with standard RN project, Nozbe's unusual folder structure and internal Watermelon tester
 
-get_filename_component(_nativeTesterPath "../../../../../node_modules/@nozbe/sqlite/" REALPATH)
+get_filename_component(_nativeTesterPath "../../../../../node_modules/@nozbe/simdjson/" REALPATH)
 get_filename_component(_nozbePath "../../../../../../../../../native/node_modules/react-native/ReactCommon/jsi/jsi/" REALPATH)
 
 if(EXISTS "${_nativeTesterPath}")
@@ -33,11 +33,9 @@ endif()
 # Header search paths
 # FIXME: <simdjson/simdjson.h> should work…
 
-set(SQLITE_VERSION sqlite-amalgamation-3460000)
-
 include_directories(
         ../../../../shared
-        ${NODE_MODULES_PATH_WM}/@nozbe/sqlite/${SQLITE_VERSION}/
+        ../../../../sqlite
         ${NODE_MODULES_PATH_WM}/@nozbe/simdjson/src/
         ${NODE_MODULES_PATH_RN}/react-native/React
         ${NODE_MODULES_PATH_RN}/react-native/React/Base
@@ -74,7 +72,7 @@ file(GLOB SHARED_SRC_FILES ../../../../shared/*.cpp)
 
 add_library(watermelondb-jsi SHARED
         # vendor files
-        ${NODE_MODULES_PATH_WM}/@nozbe/sqlite/${SQLITE_VERSION}/sqlite3.c
+        ../../../../sqlite/sqlite3.c
         ${NODE_MODULES_PATH_WM}/@nozbe/simdjson/src/simdjson.cpp
         # our sources
         ${ANDROID_JSI_SRC_FILES}

@@ -21,8 +21,7 @@
     <!-- TODO: Figure out how to override them by consumers? -->
     <WatermelonJsiSharedDir Condition="'$(WatermelonJsiSharedDir)' == ''">..\..\shared\</WatermelonJsiSharedDir>
     <WatermelonAtNozbeNodeModulesDir Condition="'$(WatermelonAtNozbeNodeModulesDir)' == ''">$(ReactNativeWindowsDir)..\@nozbe\</WatermelonAtNozbeNodeModulesDir>
-    <WatermelonSqliteVersion Condition="'$(WatermelonSqliteVersion)' == ''">sqlite-amalgamation-3460000</WatermelonSqliteVersion>
-    <WatermelonSqliteDir Condition="'$(WatermelonSqliteDir)' == ''">$(WatermelonAtNozbeNodeModulesDir)sqlite\$(WatermelonSqliteVersion)\</WatermelonSqliteDir>
+    <WatermelonSqliteDir Condition="'$(WatermelonSqliteDir)' == ''">..\..\sqlite\</WatermelonSqliteDir>
     <WatermelonSimdjsonDir Condition="'$(WatermelonSimdjsonDir)' == ''">$(WatermelonAtNozbeNodeModulesDir)simdjson\src\</WatermelonSimdjsonDir>
   </PropertyGroup>
   <Import Project="$(ReactNativeWindowsDir)\PropertySheets\External\Microsoft.ReactNative.WindowsSdk.Default.props" Condition="Exists('$(ReactNativeWindowsDir)\PropertySheets\External\Microsoft.ReactNative.WindowsSdk.Default.props')" />
@@ -93,7 +92,8 @@
       <WarningLevel>Level4</WarningLevel>
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
       <DisableSpecificWarnings>4453;28204</DisableSpecificWarnings>
-      <PreprocessorDefinitions>SQLITE_OS_WINRT;_WINRT_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Windows Store build: SQLite 3.54+ reads SQLITE_UWP, older versions read SQLITE_OS_WINRT -->
+      <PreprocessorDefinitions>SQLITE_UWP;SQLITE_OS_WINRT;_WINRT_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalUsingDirectories>$(WindowsSDK_WindowsMetadata);$(AdditionalUsingDirectories)</AdditionalUsingDirectories>
       <AdditionalIncludeDirectories>$(WatermelonJsiSharedDir);$(WatermelonSimdjsonDir);$(WatermelonSqliteDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -128,6 +128,7 @@
     <ClInclude Include="WMDatabaseBridge.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="$(WatermelonSqliteDir)sqlite3.h" />
+    <ClInclude Include="sqlite3_uwp.h" />
     <ClInclude Include="$(WatermelonSimdjsonDir)simdjson.h" />
   </ItemGroup>
   <ItemGroup>
@@ -148,7 +149,10 @@
     <ClCompile Include="DatabasePlatformWindows.cpp" />
     <ClCompile Include="WMDatabaseBridge.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
-    <ClCompile Include="$(WatermelonSqliteDir)sqlite3.c" />
+    <ClCompile Include="$(WatermelonSqliteDir)sqlite3.c">
+      <!-- Replaces the desktop-only file APIs SQLite 3.54 still calls in Windows Store builds -->
+      <ForcedIncludeFiles>$(MSBuildThisFileDirectory)sqlite3_uwp.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+    </ClCompile>
     <ClCompile Include="$(WatermelonSimdjsonDir)simdjson.cpp" />
   </ItemGroup>
   <ItemGroup>

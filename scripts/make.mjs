@@ -123,6 +123,7 @@ const copyNonJavaScriptFiles = (buildPath) => {
     'react-native.config.js', // NOTE: this is needed for autolinking
     // 'docs',
     'native/shared',
+    'native/sqlite',
     'native/ios',
     'native/android',
     'native/android-jsi',
