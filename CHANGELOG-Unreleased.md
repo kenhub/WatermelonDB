@@ -11,6 +11,8 @@
 - [LokiJS] New `onInMemoryFallback` option: called when the database falls back to being in-memory only
 - New `Collection.observeRecord(id)`: a failsafe version of `findAndObserve(id)` that emits `null` while the record does not exist (instead of erroring), emits the record once it is created, and emits `null` (instead of completing) when it is deleted. `@experimentalFailsafe` relations now use it, so their `observe()` recovers when a missing related record is created later
 
+- [LokiJS] New opt-in `exclusiveLock` option: only one browser tab at a time has the database open (using the Web Locks API), so tabs no longer overwrite each other's changes or undo a reset done in another tab. Other tabs wait until it's closed, and `onDatabaseLockedElsewhere` is called. Without the Web Locks API, the database is opened without a lock
+
 ### Fixes
 
 - [LokiJS] Multitab sync issue fix

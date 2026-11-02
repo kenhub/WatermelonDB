@@ -24,6 +24,7 @@ import type { Loki, LokiCollection } from '../type'
 
 import { newLoki, deleteDatabase, lokiFatalError } from './lokiExtensions'
 import { executeQuery, executeCount } from './executeQuery'
+import { acquireDatabaseLock } from './databaseLock'
 
 import type { LokiAdapterOptions } from '../index'
 
@@ -59,6 +60,9 @@ export default class DatabaseDriver {
   }
 
   async setUp(): Promise<void> {
+    if (this.options.exclusiveLock) {
+      await acquireDatabaseLock(this.options, (error) => this._breakDriver(error))
+    }
     await this._openDatabase()
     await this._migrateIfNeeded()
   }

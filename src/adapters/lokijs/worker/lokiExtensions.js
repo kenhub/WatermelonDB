@@ -8,7 +8,7 @@ import type { Loki } from '../type'
 
 // App callbacks are called from Loki timers, IndexedDB event handlers and adapter setup, and must
 // not change what happens next (or prevent other callbacks), so errors thrown by them are logged
-function callSafely<T>(callback: ?(T) => void, arg: T): void {
+export function callSafely<T>(callback: ?(T) => void, arg: T): void {
   try {
     callback && callback(arg)
   } catch (error) {
