@@ -14,6 +14,7 @@ import {
   makeChangeSet,
   expectDoesNotExist,
   prepareCreateFromRaw,
+  countingElementReads,
 } from './helpers'
 
 import { fetchLocalChanges, applyRemoteChanges } from '../index'
@@ -454,8 +455,109 @@ describe('applyRemoteChanges', () => {
   it.skip(`doesn't destroy dependent objects`, async () => {
     // TODO: Add this test when fast delete is implemented
   })
-  it.skip('only emits one collection batch change', async () => {
-    // TODO: Implement and unskip test when batch change emissions are implemented
+  describe('_unsafeBatchPerCollection', () => {
+    const manyProjects = (count, prefix = 'p') =>
+      Array.from({ length: count }, (_, i) => ({ id: `${prefix}${i}`, name: 'remote' }))
+
+    it('only emits one change notification per pull', async () => {
+      const { database, projects, tasks } = makeDatabase()
+      await makeLocalChanges(database)
+      const projectCount = await projects.query().fetchCount()
+
+      const subscriber = jest.fn()
+      database.experimentalSubscribe(['mock_projects', 'mock_tasks', 'mock_comments'], subscriber)
+      const projectsObserver = jest.fn()
+      projects.changes.subscribe(projectsObserver)
+      const tasksObserver = jest.fn()
+      tasks.changes.subscribe(tasksObserver)
+      const batchSpy = jest.spyOn(database, 'batch')
+
+      await testApplyRemoteChanges(
+        database,
+        {
+          mock_projects: { created: manyProjects(10001), deleted: ['pSynced'] },
+          mock_tasks: { updated: [{ id: 'tSynced', name: 'remote' }] },
+          mock_comments: { deleted: ['cSynced'] },
+        },
+        { _unsafeBatchPerCollection: true },
+      )
+
+      expect(batchSpy).toHaveBeenCalledTimes(5) // 3 project chunks, 1 task, 1 comment
+      expect(subscriber).toHaveBeenCalledTimes(1)
+      expect(projectsObserver).toHaveBeenCalledTimes(1)
+      expect(projectsObserver.mock.calls[0][0].length).toBe(10002)
+      expect(tasksObserver).toHaveBeenCalledTimes(1)
+      expect(await projects.query().fetchCount()).toBe(projectCount + 10001 - 1)
+      await expectSyncedAndMatches(projects, 'p10000', { name: 'remote' })
+      await expectDoesNotExist(projects, 'pSynced')
+    })
+    it('does not apply any batch if cleaning up deleted records fails', async () => {
+      const { database, projects } = makeDatabase()
+      await makeLocalChanges(database)
+      const projectCount = await projects.query().fetchCount()
+
+      database.adapter.destroyDeletedRecords = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        throw new Error('cleanup failed')
+      })
+      const batchSpy = jest.spyOn(database, 'batch')
+
+      await expectToRejectWithMessage(
+        testApplyRemoteChanges(
+          database,
+          { mock_projects: { created: manyProjects(6000), deleted: ['pDeleted'] } },
+          { _unsafeBatchPerCollection: true },
+        ),
+        /cleanup failed/,
+      )
+      // give a batch running in the background a chance to finish
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(batchSpy).toHaveBeenCalledTimes(0)
+      expect(await projects.query().fetchCount()).toBe(projectCount)
+    })
+    it('commits chunks one after another and stops at the first failure', async () => {
+      const { database, projects, adapter } = makeDatabase()
+
+      const originalBatch = adapter.batch.bind(adapter)
+      let inFlight = 0
+      let maxInFlight = 0
+      let batchCount = 0
+      adapter.batch = jest.fn((operations, callback) => {
+        batchCount += 1
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        const fail = batchCount === 2
+        setTimeout(() => {
+          inFlight -= 1
+          if (fail) {
+            callback({ error: new Error('batch failed') })
+          } else {
+            originalBatch(operations, callback)
+          }
+        }, 1)
+      })
+
+      const subscriber = jest.fn()
+      database.experimentalSubscribe(['mock_projects'], subscriber)
+
+      await expectToRejectWithMessage(
+        testApplyRemoteChanges(
+          database,
+          { mock_projects: { created: manyProjects(12000) } },
+          { _unsafeBatchPerCollection: true },
+        ),
+        /batch failed/,
+      )
+
+      expect(maxInFlight).toBe(1)
+      expect(adapter.batch).toHaveBeenCalledTimes(2)
+      // only the first chunk was applied, and observers learn about it
+      expect(await projects.query().fetchCount()).toBe(5000)
+      expect(subscriber).toHaveBeenCalledTimes(1)
+      // records from chunks after the failed one were never prepared
+      expect(projects._cache.map.has('p11999')).toBe(false)
+    })
   })
   it('rejects invalid records', async () => {
     const { database } = makeDatabase()
@@ -476,8 +578,150 @@ describe('applyRemoteChanges', () => {
     await expectUpdateFails({ id: 'foo', _status: 'created' })
     await expectUpdateFails({ id: 'foo', _changed: 'bla' })
     await expectUpdateFails({ foo: 'bar' })
+    await expectUpdateFails({ id: 1 })
 
     expect(await fetchLocalChanges(database)).toEqual(emptyLocalChanges)
+  })
+  describe('changeset validation', () => {
+    const expectNothingTouched = async (database, pSynced, tSynced) => {
+      const projects = database.get('mock_projects')
+      const tasks = database.get('mock_tasks')
+      expect(await getRaw(projects, 'pSynced')).toEqual(pSynced)
+      expect(await getRaw(tasks, 'tSynced')).toEqual(tSynced)
+
+      // cached records must still be usable
+      await database.write(async () => {
+        const project = await projects.find('pSynced')
+        expect(project._raw).toEqual(pSynced)
+        await project.update((p) => {
+          p.name = 'local again'
+        })
+      })
+    }
+
+    it('validates the whole changeset before preparing any record', async () => {
+      const { database } = makeDatabase()
+      await makeLocalChanges(database)
+      const pSynced = { ...(await getRaw(database.get('mock_projects'), 'pSynced')) }
+      const tSynced = { ...(await getRaw(database.get('mock_tasks'), 'tSynced')) }
+
+      await expectToRejectWithMessage(
+        testApplyRemoteChanges(database, {
+          mock_projects: { updated: [{ id: 'pSynced', name: 'remote' }] },
+          mock_tasks: { updated: [{ id: 'tSynced', name: 'remote', _status: 'synced' }] },
+        }),
+        /invalid raw record/i,
+      )
+      await expectNothingTouched(database, pSynced, tSynced)
+    })
+    it('rejects records that appear more than once in a table', async () => {
+      const { database } = makeDatabase()
+      await makeLocalChanges(database)
+      const pSynced = { ...(await getRaw(database.get('mock_projects'), 'pSynced')) }
+      const tSynced = { ...(await getRaw(database.get('mock_tasks'), 'tSynced')) }
+
+      const expectDuplicateFails = (taskChanges) =>
+        expectToRejectWithMessage(
+          testApplyRemoteChanges(database, {
+            mock_projects: { updated: [{ id: 'pSynced', name: 'remote' }] },
+            mock_tasks: taskChanges,
+          }),
+          /mock_tasks#tSynced appears more than once/,
+        )
+
+      await expectDuplicateFails({
+        updated: [{ id: 'tSynced', name: 'remote' }],
+        deleted: ['tSynced'],
+      })
+      await expectDuplicateFails({
+        created: [{ id: 'tSynced', name: 'remote' }],
+        updated: [{ id: 'tSynced', name: 'remote' }],
+      })
+      await expectDuplicateFails({
+        updated: [
+          { id: 'tSynced', name: 'remote' },
+          { id: 'tSynced', name: 'remote 2' },
+        ],
+      })
+      await expectDuplicateFails({ deleted: ['tSynced', 'tSynced'] })
+      await expectNothingTouched(database, pSynced, tSynced)
+    })
+    it('validates inherited table changes too', async () => {
+      const { database } = makeDatabase()
+      await makeLocalChanges(database)
+      const pSynced = { ...(await getRaw(database.get('mock_projects'), 'pSynced')) }
+      const tSynced = { ...(await getRaw(database.get('mock_tasks'), 'tSynced')) }
+
+      // for-in (used when applying changes) enumerates inherited keys
+      const changes = Object.create({
+        mock_tasks: {
+          created: [],
+          updated: [{ id: 'tSynced', name: 'remote', _status: 'synced' }],
+          deleted: [],
+        },
+      })
+      changes.mock_projects = {
+        created: [],
+        updated: [{ id: 'pSynced', name: 'remote' }],
+        deleted: [],
+      }
+      await expectToRejectWithMessage(
+        database.write(() => applyRemoteChanges(changes, { db: database })),
+        /invalid raw record/i,
+      )
+      await expectNothingTouched(database, pSynced, tSynced)
+    })
+    it('rejects malformed table changes and ids', async () => {
+      const { database } = makeDatabase()
+      await makeLocalChanges(database)
+      const pSynced = { ...(await getRaw(database.get('mock_projects'), 'pSynced')) }
+      const tSynced = { ...(await getRaw(database.get('mock_tasks'), 'tSynced')) }
+
+      const apply = (taskChanges) =>
+        database.write(() =>
+          applyRemoteChanges(
+            {
+              mock_projects: {
+                created: [],
+                updated: [{ id: 'pSynced', name: 'remote' }],
+                deleted: [],
+              },
+              mock_tasks: taskChanges,
+            },
+            { db: database },
+          ),
+        )
+
+      await expectToRejectWithMessage(
+        apply({ created: [], updated: {}, deleted: [] }),
+        /invalid changeset supplied to sync for table mock_tasks/i,
+      )
+      await expectToRejectWithMessage(apply(null), /invalid changeset/i)
+      // changes are copied with object spread, which drops inherited and non-enumerable keys
+      await expectToRejectWithMessage(
+        apply(Object.create({ created: [], updated: [], deleted: [] })),
+        /invalid changeset supplied to sync for table mock_tasks/i,
+      )
+      const nonEnumerable = { created: [], updated: [] }
+      Object.defineProperty(nonEnumerable, 'deleted', { value: [], enumerable: false })
+      await expectToRejectWithMessage(
+        apply(nonEnumerable),
+        /invalid changeset supplied to sync for table mock_tasks/i,
+      )
+      await expectToRejectWithMessage(
+        apply({ created: [], updated: [], deleted: [{ id: 'tSynced' }] }),
+        /deleted ids in table mock_tasks must be strings/i,
+      )
+      await expectToRejectWithMessage(
+        apply({ created: [], updated: [{ id: 1, name: 'remote' }], deleted: [] }),
+        /invalid raw record/i,
+      )
+      await expectToRejectWithMessage(
+        apply({ created: [JSON.parse('{"id": "t1", "__proto__": {}}')], updated: [], deleted: [] }),
+        /__proto__/i,
+      )
+      await expectNothingTouched(database, pSynced, tSynced)
+    })
   })
   it(`safely skips collections that don't exist`, async () => {
     const { database } = makeDatabase()
@@ -505,5 +749,39 @@ describe('applyRemoteChanges', () => {
     // Now actually fetch tSynced to trigger RecordCache corruption
     //   Record ID mock_tasks#tSynced was sent over the bridge, but it's not cached
     await database.get('mock_tasks').find('tSynced')
+  })
+  it('checks locally deleted records in linear time', async () => {
+    const { database, tasks } = makeDatabase()
+    const { adapter } = database
+
+    const count = 1000
+    const ids = Array.from({ length: count }, (_, i) => `t${i}`)
+    await database.write(async () => {
+      const records = ids.map((id) => prepareCreateFromRaw(tasks, { id }))
+      await database.batch(records)
+      await database.batch(records.map((record) => record.prepareMarkAsDeleted()))
+    })
+
+    const getDeletedRecords = adapter.getDeletedRecords.bind(adapter)
+    let counter = null
+    adapter.getDeletedRecords = async (table) => {
+      const deletedIds = await getDeletedRecords(table)
+      if (table !== 'mock_tasks') {
+        return deletedIds
+      }
+      const [proxy, _counter] = countingElementReads(deletedIds)
+      counter = _counter
+      return proxy
+    }
+
+    await testApplyRemoteChanges(database, {
+      mock_tasks: { updated: ids.map((id) => ({ id, name: 'remote' })) },
+    })
+
+    // updates of locally deleted records are ignored
+    expect(await getDeletedRecords('mock_tasks')).toHaveLength(count)
+    expect((await tasks.find('t0'))._raw).toMatchObject({ _status: 'deleted', name: '' })
+    // checking each update with locallyDeletedIds.includes() would read them ~count^2 times
+    expect(counter.reads).toBeLessThanOrEqual(3 * count)
   })
 })
