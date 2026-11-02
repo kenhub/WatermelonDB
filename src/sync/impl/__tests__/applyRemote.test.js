@@ -490,6 +490,31 @@ describe('applyRemoteChanges', () => {
       await expectSyncedAndMatches(projects, 'p10000', { name: 'remote' })
       await expectDoesNotExist(projects, 'pSynced')
     })
+    it('does not apply any batch if cleaning up deleted records fails', async () => {
+      const { database, projects } = makeDatabase()
+      await makeLocalChanges(database)
+      const projectCount = await projects.query().fetchCount()
+
+      database.adapter.destroyDeletedRecords = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        throw new Error('cleanup failed')
+      })
+      const batchSpy = jest.spyOn(database, 'batch')
+
+      await expectToRejectWithMessage(
+        testApplyRemoteChanges(
+          database,
+          { mock_projects: { created: manyProjects(6000), deleted: ['pDeleted'] } },
+          { _unsafeBatchPerCollection: true },
+        ),
+        /cleanup failed/,
+      )
+      // give a batch running in the background a chance to finish
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(batchSpy).toHaveBeenCalledTimes(0)
+      expect(await projects.query().fetchCount()).toBe(projectCount)
+    })
     it('commits chunks one after another and stops at the first failure', async () => {
       const { database, projects, adapter } = makeDatabase()
 

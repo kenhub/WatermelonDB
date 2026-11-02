@@ -415,13 +415,14 @@ export default async function applyRemoteChanges(
   const recordsToApply = await getAllRecordsToApply(remoteChanges, context)
 
   // Observers are notified once, after all changes are applied (and not once per batch)
-  await db.experimentalBatchNotifications(() =>
-    // Perform steps concurrently
-    Promise.all([
-      destroyAllDeletedRecords(db, recordsToApply),
-      _unsafeBatchPerCollection
-        ? unsafeApplyAllRemoteChangesByBatches(recordsToApply, context)
-        : applyAllRemoteChanges(recordsToApply, context),
-    ]),
-  )
+  await db.experimentalBatchNotifications(async () => {
+    // Steps run one after another, so that if one fails, no batch is still running (or about to
+    // start) after this function (and the sync Writer) has already returned
+    await destroyAllDeletedRecords(db, recordsToApply)
+    if (_unsafeBatchPerCollection) {
+      await unsafeApplyAllRemoteChangesByBatches(recordsToApply, context)
+    } else {
+      await applyAllRemoteChanges(recordsToApply, context)
+    }
+  })
 }
