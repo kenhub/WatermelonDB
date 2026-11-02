@@ -15,7 +15,7 @@ import type CollectionMap from '../Database/CollectionMap'
 import { type TableName, type ColumnName, columnName } from '../Schema'
 import type { Value } from '../QueryDescription'
 import { type RawRecord, type DirtyRaw, sanitizedRaw, setRawSanitized } from '../RawRecord'
-import { setRawColumnChange } from '../sync/helpers'
+import { setRawColumnChange, addToRawSet } from '../sync/helpers'
 
 import { createTimestampsFor, fetchDescendants } from './helpers'
 
@@ -441,7 +441,13 @@ export default class Model {
     const valueBefore = this._raw[(rawFieldName: string)]
     setRawSanitized(this._raw, rawFieldName, rawValue, this.collection.schema.columns[rawFieldName])
 
-    if (valueBefore !== this._raw[(rawFieldName: string)] && this._preparedState !== 'create') {
+    if (this._preparedState === 'create') {
+      // Track columns set while building a locally created record, so that sync can resolve a
+      // conflict with a remote record of the same id per column (local columns win)
+      if (this._raw._status === 'created') {
+        this._raw._changed = addToRawSet(this._raw._changed, rawFieldName)
+      }
+    } else if (valueBefore !== this._raw[(rawFieldName: string)]) {
       setRawColumnChange(this._raw, rawFieldName)
     }
   }
