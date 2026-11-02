@@ -214,6 +214,60 @@ describe('LokiJSAdapter migrations', () => {
     expect(chunksOf(await getPersistedKeys(dbName), 'comments')).toEqual([])
   })
 
+  it('keeps the old data if saving a destroyed table fails, and deletes it on retry', async () => {
+    const dbName = `test${Math.random()}`
+    const v1 = await openAdapter(dbName, schemaV1)
+    await v1.adapter.batch(comments(250, 'old'))
+    await closeAdapter(v1)
+    const oldChunks = [
+      'comments.chunk.0',
+      'comments.chunk.1',
+      'comments.chunk.2',
+      'comments.metadata',
+    ]
+
+    // saving fails (and the IndexedDB transaction is aborted) until `failSaves` is unset
+    let failSaves = true
+    let failedSaves = 0
+    const { put } = IDBObjectStore.prototype
+    jest.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (...args) {
+      if (failSaves) {
+        failedSaves += 1
+        throw new Error('Simulated IndexedDB failure')
+      }
+      return put.apply(this, args)
+    })
+
+    const migrations = [
+      {
+        toVersion: 2,
+        steps: [destroyTable({ table: 'comments' }), createTable(commentsSchema)],
+      },
+    ]
+    const schema = bothTables(2)
+    const v2 = await openAdapter(dbName, schema, migrations)
+    await v2.adapter.batch(comments(150, 'new'))
+    await waitFor(() => failedSaves >= 2)
+    await sleep(20)
+
+    // nothing was deleted by failed saves
+    expect(chunksOf(await getPersistedKeys(dbName), 'comments')).toEqual(oldChunks)
+
+    // retry succeeds
+    failSaves = false
+    await waitFor(() => !v2.loki.autosaveDirty())
+    await v2.adapter.batch(comments(1, 'newer'))
+    await closeAdapter(v2)
+
+    expect(chunksOf(await getPersistedKeys(dbName), 'comments')).toEqual([
+      'comments.chunk.0',
+      'comments.chunk.1',
+      'comments.metadata',
+    ])
+    const reopened = await openAdapter(dbName, schema, migrations)
+    expect(await countComments(reopened.adapter)).toBe(151)
+  })
+
   it('destroys and creates a table again in one migration', async () => {
     const dbName = `test${Math.random()}`
     const v1 = await openAdapter(dbName, schemaV1)
