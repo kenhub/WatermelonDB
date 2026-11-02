@@ -15,7 +15,7 @@ import type CollectionMap from '../Database/CollectionMap'
 import { type TableName, type ColumnName, columnName } from '../Schema'
 import type { Value } from '../QueryDescription'
 import { type RawRecord, type DirtyRaw, sanitizedRaw, setRawSanitized } from '../RawRecord'
-import { setRawColumnChange, addToRawSet } from '../sync/helpers'
+import { setRawColumnChange } from '../sync/helpers'
 
 import { createTimestampsFor, fetchDescendants } from './helpers'
 
@@ -66,6 +66,8 @@ export default class Model {
   _isEditing: boolean = false
 
   _preparedState: null | 'create' | 'update' | 'markAsDeleted' | 'destroyPermanently' = null
+
+  __columnsSetOnCreate: ?(ColumnName[]) = null
 
   __changes: ?BehaviorSubject<$FlowFixMe<this>> = null
 
@@ -368,8 +370,22 @@ export default class Model {
 
     record._preparedState = 'create'
     record._isEditing = true
+    const columnsSet: ColumnName[] = []
+    record.__columnsSetOnCreate = columnsSet
     ensureSync(recordBuilder(record))
+    record.__columnsSetOnCreate = null
     record._isEditing = false
+
+    // Track columns set while building a locally created record, so that sync can resolve a
+    // conflict with a remote record of the same id per column (locally set columns win).
+    // Checked after the builder runs, since it may also change the record's sync status
+    if (columnsSet.length && record._raw._status === 'created') {
+      const changed = new Set(record._raw._changed ? record._raw._changed.split(',') : [])
+      columnsSet.forEach((column) => {
+        changed.add(column)
+      })
+      record._raw._changed = Array.from(changed).join(',')
+    }
 
     record.__logVerbose('prepareCreate')
 
@@ -442,11 +458,8 @@ export default class Model {
     setRawSanitized(this._raw, rawFieldName, rawValue, this.collection.schema.columns[rawFieldName])
 
     if (this._preparedState === 'create') {
-      // Track columns set while building a locally created record, so that sync can resolve a
-      // conflict with a remote record of the same id per column (local columns win)
-      if (this._raw._status === 'created') {
-        this._raw._changed = addToRawSet(this._raw._changed, rawFieldName)
-      }
+      // See _prepareCreate
+      this.__columnsSetOnCreate && this.__columnsSetOnCreate.push(rawFieldName)
     } else if (valueBefore !== this._raw[(rawFieldName: string)]) {
       setRawColumnChange(this._raw, rawFieldName)
     }

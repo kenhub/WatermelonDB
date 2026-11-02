@@ -708,6 +708,14 @@ describe('Sync status fields', () => {
       })
       expect(synced._raw._status).toBe('synced')
       expect(synced._raw._changed).toBe('')
+
+      // ...also if sync status is set after the columns
+      const syncedLast = await db.get('mock').create((record) => {
+        record.name = 'Remote name'
+        record._raw._status = 'synced'
+      })
+      expect(syncedLast._raw._status).toBe('synced')
+      expect(syncedLast._raw._changed).toBe('')
     })
   })
   it('marks updated records with changed fields', async () => {
