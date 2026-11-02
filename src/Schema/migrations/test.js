@@ -197,6 +197,7 @@ describe('migration step functions', () => {
     expect(destroyTable({ table: 'comments' })).toEqual({ type: 'destroy_table', table: 'comments' })
     expect(() => destroyTable({})).toThrow('Missing table name')
     expect(() => destroyTable({ table: 'local_storage' })).toThrow('local_storage')
+    expect(() => destroyTable({ table: 'LOCAL_Storage' })).toThrow('local_storage')
   })
   it('creates unsafeExecuteLoki() steps, and throws if malformed', () => {
     const execute = () => {}

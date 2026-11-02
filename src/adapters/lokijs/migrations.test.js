@@ -149,6 +149,20 @@ describe('LokiJSAdapter migrations', () => {
     expect((await v2.adapter.find('tasks', 't1')).name).toBe('after')
   })
 
+  it('rejects unsafeExecuteLoki() steps with useWebWorker: true', () => {
+    expect(
+      () =>
+        new LokiJSAdapter({
+          schema: bothTables(2),
+          migrations: schemaMigrations({
+            migrations: [{ toVersion: 2, steps: [unsafeExecuteLoki(() => {})] }],
+          }),
+          useWebWorker: true,
+          useIncrementalIndexedDB: true,
+        }),
+    ).toThrow('not supported with LokiJSAdapter { useWebWorker: true }')
+  })
+
   it('destroys tables, deleting their data from IndexedDB', async () => {
     const dbName = `test${Math.random()}`
     const v1 = await openAdapter(dbName, schemaV1)

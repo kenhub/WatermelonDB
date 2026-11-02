@@ -109,8 +109,22 @@ export default class LokiJSAdapter implements DatabaseAdapter {
     this._options = options
     this.dbName = options.dbName || 'loki'
     const { schema, migrations } = options
-
     const useWebWorker = options.useWebWorker ?? process.env.NODE_ENV !== 'test'
+
+    if (process.env.NODE_ENV !== 'production') {
+      invariant(
+        !(
+          useWebWorker &&
+          migrations &&
+          Array.isArray(migrations.sortedMigrations) &&
+          migrations.sortedMigrations.some(({ steps }) =>
+            steps.some((step) => step.type === 'loki'),
+          )
+        ),
+        'unsafeExecuteLoki() migration steps are not supported with LokiJSAdapter { useWebWorker: true }, because functions cannot be sent to a web worker',
+      )
+    }
+
     this._dispatcher = new LokiDispatcher(useWebWorker)
 
     this.schema = schema

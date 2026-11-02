@@ -195,7 +195,7 @@ export function destroyTable({
   if (process.env.NODE_ENV !== 'production') {
     invariant(typeof table === 'string' && table, `Missing table name in destroyTable()`)
     invariant(
-      (table: string) !== 'local_storage',
+      table.toLowerCase() !== 'local_storage',
       `local_storage is used internally by WatermelonDB and can't be destroyed`,
     )
   }
@@ -203,7 +203,8 @@ export function destroyTable({
 }
 
 // LokiJS counterpart of `unsafeExecuteSql`: `execute` is called with the Loki instance during the
-// migration (synchronously - it must not return a Promise). Ignored on SQLite.
+// migration (synchronously - it must not return a Promise). Ignored on SQLite. Not supported with
+// LokiJSAdapter `useWebWorker: true`.
 export function unsafeExecuteLoki(execute: (loki: any) => void): LokiMigrationStep {
   if (process.env.NODE_ENV !== 'production') {
     invariant(typeof execute === 'function', `unsafeExecuteLoki expects a function`)
