@@ -13,6 +13,7 @@
 
 ### Fixes
 
+- [Sync] A pulled changeset is now validated in full before any of it is applied (table and record shape, string ids, ids listed more than once in a table's created/updated/deleted). Before, an invalid record found halfway through left already-prepared records broken in memory, and updating them failed until the app restarted. Records with a non-string `id` are now rejected instead of being given a random id
 - [LokiJS] Multitab sync issue fix
 - [LokiJS] When IndexedDB database is deleted in another tab (`onversionchange`), the database is no longer re-created from this tab's memory on next autosave. Instead, the adapter stops saving, rejects further changes, and calls `onPersistenceError`
 - [LokiJS] Failures to save the database to IndexedDB are now always logged
